@@ -20,6 +20,7 @@ type Editor struct {
 	fileName     string
 	filePath     string
 	fileContents string
+	isModified   bool
 }
 
 type Gopad struct {
@@ -37,6 +38,14 @@ type Gopad struct {
 	editorToClose    int
 	activeEditor     int
 	lastActiveEditor int
+
+	//Errors
+	haveErr bool
+	errMsg  string
+
+	//Settings
+	textSelectionColor imgui.Vec4
+	editorBgColor      imgui.Vec4
 }
 
 var ()
@@ -65,7 +74,9 @@ func main() {
 		editors: []Editor{
 			{fileName: "**scratch**"},
 		},
-		editorToClose: -1,
+		editorToClose:      -1,
+		textSelectionColor: imgui.Vec4{X: 84 / 255.0, Y: 153 / 255.0, Z: 199 / 255.0, W: 0.4},
+		editorBgColor:      imgui.Vec4{X: 0.1, Y: 0.1, Z: 0.1, W: 1},
 	}
 
 	// engine.SetVSync(true)
@@ -99,12 +110,10 @@ func (g *Gopad) handleWindowEvents(event sdl.Event) {
 
 	case *sdl.TextEditingEvent:
 	case *sdl.TextInputEvent:
-		// g.buffer = append(g.buffer, []rune(e.GetText())...)
-
 	case *sdl.WindowEvent:
 		if e.Event == sdl.WINDOWEVENT_SIZE_CHANGED {
 			w, _ := g.Win.SDLWin.GetSize()
-			g.sidebarSize = float32(w) * 0.10
+			g.sidebarSize = float32(w) * 0.15
 		}
 	}
 }
@@ -132,21 +141,57 @@ func (g *Gopad) Update() {
 		g.Quitting = true
 	}
 
-	if x, _ := input.GetMousePos(); x > int32(g.sidebarSize) && input.MouseClicked(sdl.BUTTON_LEFT) {
-		sdl.StartTextInput()
+	if g.haveErr {
+		g.showErrorPopup()
 	}
 
-	if input.KeyClicked(sdl.K_ESCAPE) {
-		sdl.StopTextInput()
+	e := g.getActiveEditor()
+	if !e.isModified {
+		return
 	}
 
-	// if input.KeyClicked(sdl.K_BACKSPACE) && len(g.buffer) > 0 {
-	// 	g.buffer = g.buffer[:len(g.buffer)-1]
-	// }
+	if !input.KeyDown(sdl.K_LCTRL) || !input.KeyClicked(sdl.K_s) {
+		return
+	}
 
-	// if input.KeyClicked(sdl.K_RETURN) || input.KeyClicked(sdl.K_RETURN2) {
-	// 	g.buffer = append(g.buffer, rune('\n'))
-	// }
+	if e.fileName == "**scratch**" {
+		e.isModified = false
+		return
+	}
+
+	err := os.WriteFile(e.filePath, []byte(e.fileContents), os.ModePerm)
+	if err != nil {
+		g.fireError("Failed to save file. Error: " + err.Error())
+		return
+	}
+
+	e.isModified = false
+}
+
+func (g *Gopad) fireError(errMsg string) {
+	imgui.OpenPopup("err")
+	g.haveErr = true
+	g.errMsg = errMsg
+}
+
+func (g *Gopad) showErrorPopup() {
+
+	w, h := g.Win.SDLWin.GetSize()
+	imgui.SetNextWindowPos(imgui.Vec2{X: float32(w) * 0.5, Y: float32(h) * 0.5})
+
+	shouldEnd := imgui.BeginPopup("err")
+
+	imgui.Text(g.errMsg)
+	if imgui.Button("OK") {
+		g.haveErr = false
+		imgui.CloseCurrentPopup()
+	}
+
+	if shouldEnd {
+		imgui.EndPopup()
+	} else {
+		g.haveErr = false
+	}
 }
 
 func (g *Gopad) Render() {
@@ -202,6 +247,10 @@ func (g *Gopad) drawEditors() {
 			flags = imgui.TabItemFlagsSetSelected
 		}
 
+		if e.isModified {
+			flags |= imgui.TabItemFlagsUnsavedDocument
+		}
+
 		open := true
 		if !imgui.BeginTabItemV(e.fileName, &open, flags) {
 
@@ -237,16 +286,19 @@ func (g *Gopad) drawEditors() {
 	imgui.SetNextWindowSize(fullWinSize)
 	imgui.BeginV("editorText", nil, imgui.WindowFlagsNoCollapse|imgui.WindowFlagsNoDecoration|imgui.WindowFlagsNoMove)
 
-	imgui.PushStyleColor(imgui.StyleColorFrameBg, imgui.Vec4{X: 0.1, Y: 0.1, Z: 0.1, W: 1})
+	imgui.PushStyleColor(imgui.StyleColorFrameBg, g.editorBgColor)
+	imgui.PushStyleColor(imgui.StyleColorTextSelectedBg, g.textSelectionColor)
 	fullWinSize.Y -= 18
-	imgui.InputTextMultilineV("", &g.getActiveEditor().fileContents, fullWinSize, 0, nil)
+	imgui.InputTextMultilineV("", &g.getActiveEditor().fileContents, fullWinSize, imgui.ImGuiInputTextFlagsCallbackEdit|imgui.InputTextFlagsAllowTabInput, g.textEditCB)
+	imgui.PopStyleColor()
 	imgui.PopStyleColor()
 	imgui.End()
 }
 
-// func (g *Gopad) textEditCB(d imgui.InputTextCallbackData) int32 {
-// 	return 0
-// }
+func (g *Gopad) textEditCB(d imgui.InputTextCallbackData) int32 {
+	g.getActiveEditor().isModified = true
+	return 0
+}
 
 func (g *Gopad) getActiveEditor() *Editor {
 	return g.getEditor(g.activeEditor)
