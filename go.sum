@@ -1,8 +1,8 @@
 github.com/bloeys/assimp-go v0.4.2/go.mod h1:my3yRxT7CfOztmvi+0svmwbaqw0KFrxaHxncoyaEIP0=
 github.com/bloeys/gglm v0.3.1 h1:Sy9upW7SBsBfDXrSmEhid3aQ+7J7itej+upwcxOnPMQ=
 github.com/bloeys/gglm v0.3.1/go.mod h1:qwJQ0WzV191wAMwlGicbfbChbKoSedMk7gFFX6GnyOk=
-github.com/bloeys/nmage v0.0.7-0.20220224035035-36ac96d64163 h1:nX0RshsywmSpkK1D2uHrmyUFMbnCDrPYSm5xIYYq8/Y=
-github.com/bloeys/nmage v0.0.7-0.20220224035035-36ac96d64163/go.mod h1:4h2tKtMvk9ab8r/+rem4QonPXEBTho6VWvpCMm0M6iM=
+github.com/bloeys/nmage v0.0.7 h1:MXl/sLWq1e+HLX5X8KbdNb3pbMroQEyuvvltT4HgAt8=
+github.com/bloeys/nmage v0.0.7/go.mod h1:4h2tKtMvk9ab8r/+rem4QonPXEBTho6VWvpCMm0M6iM=
 github.com/davecgh/go-spew v1.1.0 h1:ZDRjVQ15GmhC3fiQ8ni8+OwkZQO4DARzQgrnXU1Liz8=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/go-gl/gl v0.0.0-20211025173605-bda47ffaa784/go.mod h1:9YTyiznxEY1fVinfM7RvRcjRHbw2xLBJ3AAGIT0I4Nw=

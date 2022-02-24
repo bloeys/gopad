@@ -68,6 +68,7 @@ func main() {
 		editorToClose: -1,
 	}
 
+	// engine.SetVSync(true)
 	engine.Run(&g)
 }
 
@@ -89,6 +90,7 @@ func (g *Gopad) Init() {
 
 	w, _ := g.Win.SDLWin.GetSize()
 	g.sidebarSize = float32(w) * 0.10
+
 }
 
 func (g *Gopad) handleWindowEvents(event sdl.Event) {
@@ -150,14 +152,12 @@ func (g *Gopad) Update() {
 func (g *Gopad) Render() {
 
 	//Global imgui settings
-	imgui.PushStyleColor(imgui.StyleColorText, imgui.Vec4{X: 1, Y: 1, Z: 1, W: 1})
 	imgui.PushFont(g.mainFont)
 
 	g.drawSidebar()
 	g.drawEditors()
 
 	imgui.PopFont()
-	imgui.PopStyleColor()
 }
 
 func (g *Gopad) drawSidebar() {
@@ -232,13 +232,21 @@ func (g *Gopad) drawEditors() {
 	imgui.End()
 
 	//Draw text area
+	fullWinSize := imgui.Vec2{X: float32(w) - g.sidebarSize, Y: float32(h) - tabsHeight}
 	imgui.SetNextWindowPos(imgui.Vec2{X: g.sidebarSize, Y: tabsHeight})
-	imgui.SetNextWindowSize(imgui.Vec2{X: float32(w) - g.sidebarSize, Y: float32(h) - tabsHeight})
+	imgui.SetNextWindowSize(fullWinSize)
 	imgui.BeginV("editorText", nil, imgui.WindowFlagsNoCollapse|imgui.WindowFlagsNoDecoration|imgui.WindowFlagsNoMove)
 
-	imgui.Text(g.getActiveEditor().fileContents)
+	imgui.PushStyleColor(imgui.StyleColorFrameBg, imgui.Vec4{X: 0.1, Y: 0.1, Z: 0.1, W: 1})
+	fullWinSize.Y -= 18
+	imgui.InputTextMultilineV("", &g.getActiveEditor().fileContents, fullWinSize, 0, nil)
+	imgui.PopStyleColor()
 	imgui.End()
 }
+
+// func (g *Gopad) textEditCB(d imgui.InputTextCallbackData) int32 {
+// 	return 0
+// }
 
 func (g *Gopad) getActiveEditor() *Editor {
 	return g.getEditor(g.activeEditor)
