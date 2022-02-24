@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"io/fs"
 	"os"
 	"path"
@@ -33,6 +34,7 @@ type Gopad struct {
 	CurrDirContents []fs.DirEntry
 
 	editors          []Editor
+	editorToClose    int
 	activeEditor     int
 	lastActiveEditor int
 }
@@ -63,6 +65,7 @@ func main() {
 		editors: []Editor{
 			{fileName: "**scratch**"},
 		},
+		editorToClose: -1,
 	}
 
 	engine.Run(&g)
@@ -105,6 +108,20 @@ func (g *Gopad) handleWindowEvents(event sdl.Event) {
 }
 
 func (g *Gopad) FrameStart() {
+
+	//Remove deleted editors
+	if g.editorToClose == -1 {
+		return
+	}
+
+	g.editors = append(g.editors[:g.editorToClose], g.editors[g.editorToClose+1:]...)
+	g.editorToClose = -1
+
+	if g.activeEditor >= len(g.editors) {
+		g.activeEditor = len(g.editors) - 1
+	}
+
+	g.lastActiveEditor = g.activeEditor
 }
 
 func (g *Gopad) Update() {
@@ -185,8 +202,16 @@ func (g *Gopad) drawEditors() {
 			flags = imgui.TabItemFlagsSetSelected
 		}
 
-		if !imgui.BeginTabItemV(e.fileName, nil, flags) {
+		open := true
+		if !imgui.BeginTabItemV(e.fileName, &open, flags) {
+
+			if !open {
+				g.editorToClose = i
+			}
 			continue
+		}
+		if !open {
+			g.editorToClose = i
 		}
 
 		//If these two aren't equal it means we programmatically changed the active editor (instead of a mouse click),
@@ -210,9 +235,29 @@ func (g *Gopad) drawEditors() {
 	imgui.SetNextWindowPos(imgui.Vec2{X: g.sidebarSize, Y: tabsHeight})
 	imgui.SetNextWindowSize(imgui.Vec2{X: float32(w) - g.sidebarSize, Y: float32(h) - tabsHeight})
 	imgui.BeginV("editorText", nil, imgui.WindowFlagsNoCollapse|imgui.WindowFlagsNoDecoration|imgui.WindowFlagsNoMove)
-	imgui.Text(g.editors[g.activeEditor].fileContents)
-	imgui.End()
 
+	imgui.Text(g.getActiveEditor().fileContents)
+	imgui.End()
+}
+
+func (g *Gopad) getActiveEditor() *Editor {
+	return g.getEditor(g.activeEditor)
+}
+
+func (g *Gopad) getEditor(index int) *Editor {
+
+	if len(g.editors) == 0 {
+		e := Editor{fileName: "**scratch**"}
+		g.editors = append(g.editors, e)
+		g.activeEditor = 0
+		return &e
+	}
+
+	if index >= 0 && index < len(g.editors) {
+		return &g.editors[index]
+	}
+
+	panic(fmt.Sprint("Invalid editor index: ", index))
 }
 
 func (g *Gopad) drawDir(dir fs.DirEntry, path string) {
@@ -261,7 +306,6 @@ func (g *Gopad) handleFileClick(fPath string) {
 	}
 
 	//Read new file and switch to it
-	println("Reading:", fPath)
 	b, err := os.ReadFile(fPath)
 	if err != nil {
 		panic(err)
