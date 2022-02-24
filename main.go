@@ -155,13 +155,15 @@ func (g *Gopad) handleWindowEvents(event sdl.Event) {
 
 func (g *Gopad) FrameStart() {
 
-	//Remove deleted editors
-	if g.editorToClose == -1 {
-		return
+	if g.editorToClose > -1 {
+		g.closeEditor(g.editorToClose)
+		g.editorToClose = -1
 	}
+}
 
-	g.editors = append(g.editors[:g.editorToClose], g.editors[g.editorToClose+1:]...)
-	g.editorToClose = -1
+func (g *Gopad) closeEditor(eIndex int) {
+
+	g.editors = append(g.editors[:eIndex], g.editors[eIndex+1:]...)
 
 	if g.activeEditor >= len(g.editors) {
 		g.activeEditor = len(g.editors) - 1
@@ -180,6 +182,13 @@ func (g *Gopad) Update() {
 		g.showErrorPopup()
 	}
 
+	//Close editor if needed
+	if input.KeyDown(sdl.K_LCTRL) && input.KeyClicked(sdl.K_w) {
+		g.closeEditor(g.activeEditor)
+		g.editorToClose = -1
+	}
+
+	//Save if needed
 	e := g.getActiveEditor()
 	if !e.isModified {
 		return
@@ -248,10 +257,6 @@ func (g *Gopad) Render() {
 
 func (g *Gopad) drawMenubar() {
 
-	// imgui.SetNextWindowPos(imgui.Vec2{X: 0, Y: 0})
-	// imgui.SetNextWindowSize(imgui.Vec2{X: g.winWidth})
-	// imgui.BeginV("menuBar", nil, imgui.WindowFlagsMenuBar|imgui.WindowFlagsNoCollapse|imgui.WindowFlagsNoTitleBar|imgui.WindowFlagsNoDecoration|imgui.WindowFlagsNoMove|imgui.WindowFlagsNoResize)
-
 	shouldCloseMenuBar := imgui.BeginMainMenuBar()
 
 	if imgui.BeginMenu("File") {
@@ -267,8 +272,6 @@ func (g *Gopad) drawMenubar() {
 	if shouldCloseMenuBar {
 		imgui.EndMainMenuBar()
 	}
-
-	// imgui.End()
 }
 
 func (g *Gopad) drawSidebar() {
@@ -357,10 +360,12 @@ func (g *Gopad) drawEditors() {
 	imgui.PushStyleColor(imgui.StyleColorTextSelectedBg, g.textSelectionColor)
 
 	fullWinSize.Y -= 18
+
+	e := g.getActiveEditor()
+	imgui.InputTextMultilineV(e.fileName, &e.fileContents, fullWinSize, imgui.ImGuiInputTextFlagsCallbackEdit|imgui.InputTextFlagsAllowTabInput, g.textEditCB)
 	if shouldForceSwitch || prevActiveEditor != g.activeEditor {
-		imgui.SetKeyboardFocusHereV(1)
+		imgui.SetKeyboardFocusHereV(-1)
 	}
-	imgui.InputTextMultilineV("", &g.getActiveEditor().fileContents, fullWinSize, imgui.ImGuiInputTextFlagsCallbackEdit|imgui.InputTextFlagsAllowTabInput, g.textEditCB)
 
 	imgui.PopStyleColor()
 	imgui.PopStyleColor()
