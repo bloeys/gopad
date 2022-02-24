@@ -3,6 +3,7 @@ package main
 import (
 	"io/fs"
 	"os"
+	"path"
 
 	"github.com/bloeys/nmage/engine"
 	"github.com/bloeys/nmage/input"
@@ -13,6 +14,12 @@ import (
 )
 
 //TODO: Cache os.ReadDir so we don't have to use lots of disk
+
+type Editor struct {
+	fileName     string
+	filePath     string
+	fileContents string
+}
 
 type Gopad struct {
 	Win       *engine.Window
@@ -25,7 +32,9 @@ type Gopad struct {
 	CurrDir         string
 	CurrDirContents []fs.DirEntry
 
-	buffer []rune
+	editors          []Editor
+	activeEditor     int
+	lastActiveEditor int
 }
 
 var ()
@@ -50,8 +59,10 @@ func main() {
 	g := Gopad{
 		Win:       window,
 		ImGUIInfo: nmageimgui.NewImGUI(),
-		buffer:    make([]rune, 0, 10000),
 		CurrDir:   dir,
+		editors: []Editor{
+			{fileName: "**scratch**"},
+		},
 	}
 
 	engine.Run(&g)
@@ -83,7 +94,7 @@ func (g *Gopad) handleWindowEvents(event sdl.Event) {
 
 	case *sdl.TextEditingEvent:
 	case *sdl.TextInputEvent:
-		g.buffer = append(g.buffer, []rune(e.GetText())...)
+		// g.buffer = append(g.buffer, []rune(e.GetText())...)
 
 	case *sdl.WindowEvent:
 		if e.Event == sdl.WINDOWEVENT_SIZE_CHANGED {
@@ -110,60 +121,103 @@ func (g *Gopad) Update() {
 		sdl.StopTextInput()
 	}
 
-	if input.KeyClicked(sdl.K_BACKSPACE) && len(g.buffer) > 0 {
-		g.buffer = g.buffer[:len(g.buffer)-1]
-	}
+	// if input.KeyClicked(sdl.K_BACKSPACE) && len(g.buffer) > 0 {
+	// 	g.buffer = g.buffer[:len(g.buffer)-1]
+	// }
 
-	if input.KeyClicked(sdl.K_RETURN) || input.KeyClicked(sdl.K_RETURN2) {
-		g.buffer = append(g.buffer, rune('\n'))
-	}
+	// if input.KeyClicked(sdl.K_RETURN) || input.KeyClicked(sdl.K_RETURN2) {
+	// 	g.buffer = append(g.buffer, rune('\n'))
+	// }
 }
 
 func (g *Gopad) Render() {
-
-	open := true
-	w, h := g.Win.SDLWin.GetSize()
 
 	//Global imgui settings
 	imgui.PushStyleColor(imgui.StyleColorText, imgui.Vec4{X: 1, Y: 1, Z: 1, W: 1})
 	imgui.PushFont(g.mainFont)
 
-	//Sidebar
-	imgui.SetNextWindowPos(imgui.Vec2{X: 0, Y: 0})
-	imgui.SetNextWindowSize(imgui.Vec2{X: g.sidebarSize, Y: float32(h)})
-	imgui.BeginV("sidebar", &open, imgui.WindowFlagsNoCollapse|imgui.WindowFlagsNoDecoration|imgui.WindowFlagsNoMove)
-
-	g.refreshSidebar()
-
-	imgui.End()
-
-	//Text area
-	imgui.SetNextWindowPos(imgui.Vec2{X: g.sidebarSize, Y: 0})
-	imgui.SetNextWindowSize(imgui.Vec2{X: float32(w) - g.sidebarSize, Y: float32(h)})
-	imgui.BeginV("editor", &open, imgui.WindowFlagsNoCollapse|imgui.WindowFlagsNoDecoration|imgui.WindowFlagsNoMove)
-	imgui.Text(string(g.buffer) + "|")
-	imgui.End()
+	g.drawSidebar()
+	g.drawEditors()
 
 	imgui.PopFont()
 	imgui.PopStyleColor()
 }
 
-func (g *Gopad) refreshSidebar() {
+func (g *Gopad) drawSidebar() {
 
+	_, h := g.Win.SDLWin.GetSize()
+	imgui.SetNextWindowPos(imgui.Vec2{X: 0, Y: 0})
+	imgui.SetNextWindowSize(imgui.Vec2{X: g.sidebarSize, Y: float32(h)})
+	imgui.BeginV("sidebar", nil, imgui.WindowFlagsNoCollapse|imgui.WindowFlagsNoDecoration|imgui.WindowFlagsNoMove)
+
+	imgui.PushStyleColor(imgui.StyleColorButton, imgui.Vec4{W: 0})
 	for i := 0; i < len(g.CurrDirContents); i++ {
 
 		c := g.CurrDirContents[i]
 		if c.IsDir() {
-			drawDir(c, g.CurrDir+"/"+c.Name()+"/")
+			g.drawDir(c, g.CurrDir+"/"+c.Name()+"/")
 		} else {
-			imgui.Button(c.Name())
+			g.drawFile(c, g.CurrDir+"/"+c.Name())
 		}
 	}
+
+	imgui.PopStyleColor()
+	imgui.End()
 }
 
-func drawDir(dir fs.DirEntry, path string) {
+func (g *Gopad) drawEditors() {
 
-	isEnabled := imgui.TreeNode(dir.Name())
+	//Draw editor area window
+	w, h := g.Win.SDLWin.GetSize()
+	imgui.SetNextWindowPos(imgui.Vec2{X: g.sidebarSize, Y: 0})
+	imgui.SetNextWindowSize(imgui.Vec2{X: float32(w) - g.sidebarSize})
+	imgui.BeginV("editor", nil, imgui.WindowFlagsNoCollapse|imgui.WindowFlagsNoDecoration|imgui.WindowFlagsNoMove)
+
+	//Draw tabs
+	isEditorsEnabled := imgui.BeginTabBarV("editorTabs", 0)
+	for i := 0; i < len(g.editors); i++ {
+
+		e := &g.editors[i]
+
+		shouldForceSwitch := g.activeEditor == i && g.activeEditor != g.lastActiveEditor
+		flags := imgui.TabItemFlagsNone
+		if shouldForceSwitch {
+			flags = imgui.TabItemFlagsSetSelected
+		}
+
+		if !imgui.BeginTabItemV(e.fileName, nil, flags) {
+			continue
+		}
+
+		//If these two aren't equal it means we programmatically changed the active editor (instead of a mouse click),
+		//and so we shouldn't change based on what imgui is telling us
+		if g.activeEditor == g.lastActiveEditor {
+			g.activeEditor = i
+			g.lastActiveEditor = i
+		}
+		imgui.EndTabItem()
+	}
+	g.lastActiveEditor = g.activeEditor
+
+	if isEditorsEnabled {
+		imgui.EndTabBar()
+	}
+
+	tabsHeight := imgui.WindowHeight()
+	imgui.End()
+
+	//Draw text area
+	imgui.SetNextWindowPos(imgui.Vec2{X: g.sidebarSize, Y: tabsHeight})
+	imgui.SetNextWindowSize(imgui.Vec2{X: float32(w) - g.sidebarSize, Y: float32(h) - tabsHeight})
+	imgui.BeginV("editorText", nil, imgui.WindowFlagsNoCollapse|imgui.WindowFlagsNoDecoration|imgui.WindowFlagsNoMove)
+	imgui.Text(g.editors[g.activeEditor].fileContents)
+	imgui.End()
+
+}
+
+func (g *Gopad) drawDir(dir fs.DirEntry, path string) {
+
+	isEnabled := imgui.TreeNodeV(dir.Name(), imgui.TreeNodeFlagsSpanAvailWidth)
 	if !isEnabled {
 		return
 	}
@@ -171,13 +225,54 @@ func drawDir(dir fs.DirEntry, path string) {
 	contents := getDirContents(path)
 	for _, c := range contents {
 		if c.IsDir() {
-			drawDir(c, path+c.Name()+"/")
+			g.drawDir(c, path+c.Name()+"/")
 		} else {
-			imgui.Button(c.Name())
+			g.drawFile(c, path+c.Name())
 		}
 	}
 
 	imgui.TreePop()
+}
+
+func (g *Gopad) drawFile(f fs.DirEntry, path string) {
+
+	if imgui.Button(f.Name()) {
+		g.handleFileClick(path)
+	}
+}
+
+func (g *Gopad) handleFileClick(fPath string) {
+
+	//Check if we already have the file open
+	editorIndex := -1
+	for i := 0; i < len(g.editors); i++ {
+
+		e := &g.editors[i]
+		if e.filePath == fPath {
+			editorIndex = i
+			break
+		}
+	}
+
+	//If already found switch to it
+	if editorIndex >= 0 {
+		g.activeEditor = editorIndex
+		return
+	}
+
+	//Read new file and switch to it
+	println("Reading:", fPath)
+	b, err := os.ReadFile(fPath)
+	if err != nil {
+		panic(err)
+	}
+
+	g.editors = append(g.editors, Editor{
+		fileName:     path.Base(fPath),
+		filePath:     fPath,
+		fileContents: string(b),
+	})
+	g.activeEditor = len(g.editors) - 1
 }
 
 func (g *Gopad) FrameEnd() {
