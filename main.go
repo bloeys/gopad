@@ -26,7 +26,7 @@ func main() {
 		panic(err)
 	}
 
-	window, err := engine.CreateOpenGLWindowCentered("nMage", 1280, 720, engine.WindowFlags_RESIZABLE)
+	window, err := engine.CreateOpenGLWindowCentered("nMage", 1280, 720, engine.WindowFlags_RESIZABLE|engine.WindowFlags_ALLOW_HIGHDPI)
 	if err != nil {
 		logging.ErrLog.Fatalln("Failed to create window. Err: ", err)
 	}
@@ -35,14 +35,24 @@ func main() {
 	g := Gopad{
 		Win:       window,
 		ImGUIInfo: nmageimgui.NewImGUI(),
+		buffer:    make([]rune, 0, 10000),
 	}
 
 	engine.Run(&g)
 }
 
 func (g *Gopad) Init() {
+
 	g.Win.EventCallbacks = append(g.Win.EventCallbacks, g.handleWindowEvents)
-	g.mainFont = g.ImGUIInfo.AddFontTTF("./res/fonts/courier-new.ttf", 24)
+
+	var fontSize float32 = 16
+
+	fConfig := imgui.NewFontConfig()
+	defer fConfig.Delete()
+
+	fConfig.SetOversampleH(2)
+	fConfig.SetOversampleV(2)
+	g.mainFont = g.ImGUIInfo.AddFontTTF("./res/fonts/courier-prime.regular.ttf", fontSize, &fConfig, nil)
 }
 
 func (g *Gopad) handleWindowEvents(event sdl.Event) {
@@ -81,17 +91,16 @@ func (g *Gopad) Update() {
 	if input.KeyClicked(sdl.K_RETURN) || input.KeyClicked(sdl.K_RETURN2) {
 		g.buffer = append(g.buffer, rune('\n'))
 	}
-
 }
 
 func (g *Gopad) Render() {
 
 	open := true
 	w, h := g.Win.SDLWin.GetSize()
-	sidebarSize := float32(w) * 0.25
+	sidebarSize := float32(w) * 0.10
 
 	//Global imgui settings
-	imgui.PushStyleColor(imgui.StyleColorText, imgui.Vec4{X: 1, Y: 0, Z: 1, W: 1})
+	imgui.PushStyleColor(imgui.StyleColorText, imgui.Vec4{X: 1, Y: 1, Z: 1, W: 1})
 	imgui.PushFont(g.mainFont)
 
 	//Sidebar
@@ -104,7 +113,7 @@ func (g *Gopad) Render() {
 	imgui.SetNextWindowPos(imgui.Vec2{X: sidebarSize, Y: 0})
 	imgui.SetNextWindowSize(imgui.Vec2{X: float32(w) - sidebarSize, Y: float32(h)})
 	imgui.BeginV("editor", &open, imgui.WindowFlagsNoCollapse|imgui.WindowFlagsNoDecoration|imgui.WindowFlagsNoMove)
-	imgui.Text(string(g.buffer))
+	imgui.Text(string(g.buffer) + "|")
 	imgui.End()
 
 	imgui.PopFont()
