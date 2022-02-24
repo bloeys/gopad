@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"path"
+	"path/filepath"
 
 	"github.com/bloeys/nmage/engine"
 	"github.com/bloeys/nmage/input"
@@ -29,7 +29,9 @@ type Gopad struct {
 	ImGUIInfo nmageimgui.ImguiInfo
 	Quitting  bool
 
-	sidebarSize float32
+	mainMenuBarHeight  float32
+	sidebarWidthFactor float32
+	sidebarWidthPx     float32
 
 	CurrDir         string
 	CurrDirContents []fs.DirEntry
@@ -46,11 +48,20 @@ type Gopad struct {
 	//Settings
 	textSelectionColor imgui.Vec4
 	editorBgColor      imgui.Vec4
+
+	//Cache window size
+	winWidth  float32
+	winHeight float32
 }
 
 var ()
 
 func main() {
+
+	chdirErr := os.Chdir(filepath.Dir(os.Args[0]))
+	if chdirErr != nil {
+		panic(chdirErr.Error())
+	}
 
 	if err := engine.Init(); err != nil {
 		panic(err)
@@ -74,7 +85,9 @@ func main() {
 		editors: []Editor{
 			{fileName: "**scratch**"},
 		},
-		editorToClose:      -1,
+		editorToClose: -1,
+
+		sidebarWidthFactor: 0.15,
 		textSelectionColor: imgui.Vec4{X: 84 / 255.0, Y: 153 / 255.0, Z: 199 / 255.0, W: 0.4},
 		editorBgColor:      imgui.Vec4{X: 0.1, Y: 0.1, Z: 0.1, W: 1},
 	}
@@ -85,6 +98,7 @@ func main() {
 
 func (g *Gopad) Init() {
 
+	g.Win.SDLWin.SetTitle("Gopad")
 	g.Win.EventCallbacks = append(g.Win.EventCallbacks, g.handleWindowEvents)
 
 	//Setup font
@@ -99,9 +113,28 @@ func (g *Gopad) Init() {
 	//Sidebar
 	g.CurrDirContents = getDirContents(g.CurrDir)
 
-	w, _ := g.Win.SDLWin.GetSize()
-	g.sidebarSize = float32(w) * 0.10
+	w, h := g.Win.SDLWin.GetSize()
+	g.winWidth = float32(w)
+	g.winHeight = float32(h)
+	g.sidebarWidthPx = g.winWidth * g.sidebarWidthFactor
 
+	//Read os.Args
+	for i := 1; i < len(os.Args); i++ {
+		b, err := os.ReadFile(os.Args[i])
+		if err != nil {
+			errMsg := "Error opening file. Error: " + err.Error()
+			println(errMsg)
+			continue
+		}
+
+		g.editors = append(g.editors, Editor{
+			fileName:     filepath.Base(os.Args[i]),
+			filePath:     os.Args[i],
+			fileContents: string(b),
+		})
+	}
+
+	g.activeEditor = len(g.editors) - 1
 }
 
 func (g *Gopad) handleWindowEvents(event sdl.Event) {
@@ -112,8 +145,10 @@ func (g *Gopad) handleWindowEvents(event sdl.Event) {
 	case *sdl.TextInputEvent:
 	case *sdl.WindowEvent:
 		if e.Event == sdl.WINDOWEVENT_SIZE_CHANGED {
-			w, _ := g.Win.SDLWin.GetSize()
-			g.sidebarSize = float32(w) * 0.15
+			w, h := g.Win.SDLWin.GetSize()
+			g.winWidth = float32(w)
+			g.winHeight = float32(h)
+			g.sidebarWidthPx = g.winWidth * g.sidebarWidthFactor
 		}
 	}
 }
@@ -154,6 +189,11 @@ func (g *Gopad) Update() {
 		return
 	}
 
+	g.saveEditor(e)
+}
+
+func (g *Gopad) saveEditor(e *Editor) {
+
 	if e.fileName == "**scratch**" {
 		e.isModified = false
 		return
@@ -161,14 +201,14 @@ func (g *Gopad) Update() {
 
 	err := os.WriteFile(e.filePath, []byte(e.fileContents), os.ModePerm)
 	if err != nil {
-		g.fireError("Failed to save file. Error: " + err.Error())
+		g.triggerError("Failed to save file. Error: " + err.Error())
 		return
 	}
 
 	e.isModified = false
 }
 
-func (g *Gopad) fireError(errMsg string) {
+func (g *Gopad) triggerError(errMsg string) {
 	imgui.OpenPopup("err")
 	g.haveErr = true
 	g.errMsg = errMsg
@@ -199,17 +239,42 @@ func (g *Gopad) Render() {
 	//Global imgui settings
 	imgui.PushFont(g.mainFont)
 
+	g.drawMenubar()
 	g.drawSidebar()
 	g.drawEditors()
 
 	imgui.PopFont()
 }
 
+func (g *Gopad) drawMenubar() {
+
+	// imgui.SetNextWindowPos(imgui.Vec2{X: 0, Y: 0})
+	// imgui.SetNextWindowSize(imgui.Vec2{X: g.winWidth})
+	// imgui.BeginV("menuBar", nil, imgui.WindowFlagsMenuBar|imgui.WindowFlagsNoCollapse|imgui.WindowFlagsNoTitleBar|imgui.WindowFlagsNoDecoration|imgui.WindowFlagsNoMove|imgui.WindowFlagsNoResize)
+
+	shouldCloseMenuBar := imgui.BeginMainMenuBar()
+
+	if imgui.BeginMenu("File") {
+
+		if imgui.MenuItem("Save") {
+			g.saveEditor(g.getActiveEditor())
+		}
+
+		imgui.EndMenu()
+	}
+
+	g.mainMenuBarHeight = imgui.WindowHeight()
+	if shouldCloseMenuBar {
+		imgui.EndMainMenuBar()
+	}
+
+	// imgui.End()
+}
+
 func (g *Gopad) drawSidebar() {
 
-	_, h := g.Win.SDLWin.GetSize()
-	imgui.SetNextWindowPos(imgui.Vec2{X: 0, Y: 0})
-	imgui.SetNextWindowSize(imgui.Vec2{X: g.sidebarSize, Y: float32(h)})
+	imgui.SetNextWindowPos(imgui.Vec2{X: 0, Y: g.mainMenuBarHeight})
+	imgui.SetNextWindowSize(imgui.Vec2{X: g.sidebarWidthPx, Y: g.winHeight - g.mainMenuBarHeight})
 	imgui.BeginV("sidebar", nil, imgui.WindowFlagsNoCollapse|imgui.WindowFlagsNoDecoration|imgui.WindowFlagsNoMove)
 
 	imgui.PushStyleColor(imgui.StyleColorButton, imgui.Vec4{W: 0})
@@ -230,20 +295,21 @@ func (g *Gopad) drawSidebar() {
 func (g *Gopad) drawEditors() {
 
 	//Draw editor area window
-	w, h := g.Win.SDLWin.GetSize()
-	imgui.SetNextWindowPos(imgui.Vec2{X: g.sidebarSize, Y: 0})
-	imgui.SetNextWindowSize(imgui.Vec2{X: float32(w) - g.sidebarSize})
+	imgui.SetNextWindowPos(imgui.Vec2{X: g.sidebarWidthPx, Y: g.mainMenuBarHeight})
+	imgui.SetNextWindowSize(imgui.Vec2{X: g.winWidth - g.sidebarWidthPx})
 	imgui.BeginV("editor", nil, imgui.WindowFlagsNoCollapse|imgui.WindowFlagsNoDecoration|imgui.WindowFlagsNoMove)
 
 	//Draw tabs
 	isEditorsEnabled := imgui.BeginTabBarV("editorTabs", 0)
+	shouldForceSwitch := g.activeEditor != g.lastActiveEditor
+
+	prevActiveEditor := g.activeEditor
 	for i := 0; i < len(g.editors); i++ {
 
 		e := &g.editors[i]
 
-		shouldForceSwitch := g.activeEditor == i && g.activeEditor != g.lastActiveEditor
 		flags := imgui.TabItemFlagsNone
-		if shouldForceSwitch {
+		if shouldForceSwitch && g.activeEditor == i {
 			flags = imgui.TabItemFlagsSetSelected
 		}
 
@@ -281,15 +347,21 @@ func (g *Gopad) drawEditors() {
 	imgui.End()
 
 	//Draw text area
-	fullWinSize := imgui.Vec2{X: float32(w) - g.sidebarSize, Y: float32(h) - tabsHeight}
-	imgui.SetNextWindowPos(imgui.Vec2{X: g.sidebarSize, Y: tabsHeight})
+	imgui.SetNextWindowPos(imgui.Vec2{X: g.sidebarWidthPx, Y: g.mainMenuBarHeight + tabsHeight})
+
+	fullWinSize := imgui.Vec2{X: g.winWidth - g.sidebarWidthPx, Y: g.winHeight - g.mainMenuBarHeight - tabsHeight}
 	imgui.SetNextWindowSize(fullWinSize)
 	imgui.BeginV("editorText", nil, imgui.WindowFlagsNoCollapse|imgui.WindowFlagsNoDecoration|imgui.WindowFlagsNoMove)
 
 	imgui.PushStyleColor(imgui.StyleColorFrameBg, g.editorBgColor)
 	imgui.PushStyleColor(imgui.StyleColorTextSelectedBg, g.textSelectionColor)
+
 	fullWinSize.Y -= 18
+	if shouldForceSwitch || prevActiveEditor != g.activeEditor {
+		imgui.SetKeyboardFocusHereV(1)
+	}
 	imgui.InputTextMultilineV("", &g.getActiveEditor().fileContents, fullWinSize, imgui.ImGuiInputTextFlagsCallbackEdit|imgui.InputTextFlagsAllowTabInput, g.textEditCB)
+
 	imgui.PopStyleColor()
 	imgui.PopStyleColor()
 	imgui.End()
@@ -372,7 +444,7 @@ func (g *Gopad) handleFileClick(fPath string) {
 	}
 
 	g.editors = append(g.editors, Editor{
-		fileName:     path.Base(fPath),
+		fileName:     filepath.Base(fPath),
 		filePath:     fPath,
 		fileContents: string(b),
 	})
@@ -380,7 +452,6 @@ func (g *Gopad) handleFileClick(fPath string) {
 }
 
 func (g *Gopad) FrameEnd() {
-
 }
 
 func (g *Gopad) ShouldRun() bool {
