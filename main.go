@@ -16,13 +16,6 @@ import (
 
 //TODO: Cache os.ReadDir so we don't have to use lots of disk
 
-type Editor struct {
-	fileName     string
-	filePath     string
-	fileContents string
-	isModified   bool
-}
-
 type Gopad struct {
 	Win       *engine.Window
 	mainFont  imgui.Font
@@ -44,10 +37,6 @@ type Gopad struct {
 	//Errors
 	haveErr bool
 	errMsg  string
-
-	//Settings
-	textSelectionColor imgui.Vec4
-	editorBgColor      imgui.Vec4
 
 	//Cache window size
 	winWidth  float32
@@ -79,17 +68,12 @@ func main() {
 	}
 
 	g := Gopad{
-		Win:       window,
-		ImGUIInfo: nmageimgui.NewImGUI(),
-		CurrDir:   dir,
-		editors: []Editor{
-			{fileName: "**scratch**"},
-		},
-		editorToClose: -1,
-
+		Win:                window,
+		ImGUIInfo:          nmageimgui.NewImGUI(),
+		CurrDir:            dir,
+		editors:            []Editor{*NewScratchEditor()},
+		editorToClose:      -1,
 		sidebarWidthFactor: 0.15,
-		textSelectionColor: imgui.Vec4{X: 84 / 255.0, Y: 153 / 255.0, Z: 199 / 255.0, W: 0.4},
-		editorBgColor:      imgui.Vec4{X: 0.1, Y: 0.1, Z: 0.1, W: 1},
 	}
 
 	// engine.SetVSync(true)
@@ -128,9 +112,9 @@ func (g *Gopad) Init() {
 		}
 
 		g.editors = append(g.editors, Editor{
-			fileName:     filepath.Base(os.Args[i]),
-			filePath:     os.Args[i],
-			fileContents: string(b),
+			FileName:     filepath.Base(os.Args[i]),
+			FilePath:     os.Args[i],
+			FileContents: string(b),
 		})
 	}
 
@@ -190,7 +174,7 @@ func (g *Gopad) Update() {
 
 	//Save if needed
 	e := g.getActiveEditor()
-	if !e.isModified {
+	if !e.IsModified {
 		return
 	}
 
@@ -203,18 +187,18 @@ func (g *Gopad) Update() {
 
 func (g *Gopad) saveEditor(e *Editor) {
 
-	if e.fileName == "**scratch**" {
-		e.isModified = false
+	if e.FileName == "**scratch**" {
+		e.IsModified = false
 		return
 	}
 
-	err := os.WriteFile(e.filePath, []byte(e.fileContents), os.ModePerm)
+	err := os.WriteFile(e.FilePath, []byte(e.FileContents), os.ModePerm)
 	if err != nil {
 		g.triggerError("Failed to save file. Error: " + err.Error())
 		return
 	}
 
-	e.isModified = false
+	e.IsModified = false
 }
 
 func (g *Gopad) triggerError(errMsg string) {
@@ -316,12 +300,12 @@ func (g *Gopad) drawEditors() {
 			flags = imgui.TabItemFlagsSetSelected
 		}
 
-		if e.isModified {
+		if e.IsModified {
 			flags |= imgui.TabItemFlagsUnsavedDocument
 		}
 
 		open := true
-		if !imgui.BeginTabItemV(e.fileName, &open, flags) {
+		if !imgui.BeginTabItemV(e.FileName, &open, flags) {
 
 			if !open {
 				g.editorToClose = i
@@ -350,19 +334,8 @@ func (g *Gopad) drawEditors() {
 	imgui.End()
 
 	//Draw text area
-	imgui.SetNextWindowPos(imgui.Vec2{X: g.sidebarWidthPx, Y: g.mainMenuBarHeight + tabsHeight})
+	g.getActiveEditor().Render(&imgui.Vec2{X: g.sidebarWidthPx, Y: g.mainMenuBarHeight + tabsHeight}, &imgui.Vec2{X: g.winWidth - g.sidebarWidthPx, Y: g.winHeight - g.mainMenuBarHeight - tabsHeight})
 
-	fullWinSize := imgui.Vec2{X: g.winWidth - g.sidebarWidthPx, Y: g.winHeight - g.mainMenuBarHeight - tabsHeight}
-	imgui.SetNextWindowSize(fullWinSize)
-	imgui.BeginV("editorText", nil, imgui.WindowFlagsNoCollapse|imgui.WindowFlagsNoDecoration|imgui.WindowFlagsNoMove)
-
-	imgui.PushStyleColor(imgui.StyleColorFrameBg, g.editorBgColor)
-	imgui.PushStyleColor(imgui.StyleColorTextSelectedBg, g.textSelectionColor)
-
-	fullWinSize.Y -= 18
-
-	e := g.getActiveEditor()
-	imgui.InputTextMultilineV(e.fileName, &e.fileContents, fullWinSize, imgui.ImGuiInputTextFlagsCallbackEdit|imgui.InputTextFlagsAllowTabInput, g.textEditCB)
 	if shouldForceSwitch || prevActiveEditor != g.activeEditor {
 		imgui.SetKeyboardFocusHereV(-1)
 	}
@@ -372,11 +345,6 @@ func (g *Gopad) drawEditors() {
 	imgui.End()
 }
 
-func (g *Gopad) textEditCB(d imgui.InputTextCallbackData) int32 {
-	g.getActiveEditor().isModified = true
-	return 0
-}
-
 func (g *Gopad) getActiveEditor() *Editor {
 	return g.getEditor(g.activeEditor)
 }
@@ -384,7 +352,7 @@ func (g *Gopad) getActiveEditor() *Editor {
 func (g *Gopad) getEditor(index int) *Editor {
 
 	if len(g.editors) == 0 {
-		e := Editor{fileName: "**scratch**"}
+		e := Editor{FileName: "**scratch**"}
 		g.editors = append(g.editors, e)
 		g.activeEditor = 0
 		return &e
@@ -430,7 +398,7 @@ func (g *Gopad) handleFileClick(fPath string) {
 	for i := 0; i < len(g.editors); i++ {
 
 		e := &g.editors[i]
-		if e.filePath == fPath {
+		if e.FilePath == fPath {
 			editorIndex = i
 			break
 		}
@@ -443,16 +411,7 @@ func (g *Gopad) handleFileClick(fPath string) {
 	}
 
 	//Read new file and switch to it
-	b, err := os.ReadFile(fPath)
-	if err != nil {
-		panic(err)
-	}
-
-	g.editors = append(g.editors, Editor{
-		fileName:     filepath.Base(fPath),
-		filePath:     fPath,
-		fileContents: string(b),
-	})
+	g.editors = append(g.editors, *NewEditor(fPath))
 	g.activeEditor = len(g.editors) - 1
 }
 
