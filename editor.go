@@ -48,8 +48,6 @@ func (e *Editor) SetCursorPos(x, y int) {
 
 func (e *Editor) Render(drawStartPos, winSize *imgui.Vec2) {
 
-	origDrawStartPos := *drawStartPos
-
 	//Draw window
 	imgui.SetNextWindowPos(*drawStartPos)
 	imgui.SetNextWindowSize(*winSize)
@@ -61,6 +59,7 @@ func (e *Editor) Render(drawStartPos, winSize *imgui.Vec2) {
 	//Add padding to text
 	drawStartPos.X += textPadding
 	drawStartPos.Y += textPadding
+	paddedDrawStartPos := *drawStartPos
 
 	//Draw lines
 	lineHeight := imgui.TextLineHeightWithSpacing()
@@ -68,31 +67,62 @@ func (e *Editor) Render(drawStartPos, winSize *imgui.Vec2) {
 	linesToDraw := int(winSize.Y / lineHeight)
 	// println("Lines to draw:", linesToDraw)
 
-	cx := clampInt(e.MouseX-int(drawStartPos.X), 0, int(winSize.X))
-	cy := clampInt(e.MouseY-int(drawStartPos.Y), 0, int(winSize.Y))
-
-	clickedLine := clampInt(cy/int(lineHeight), 0, e.LineCount)
-	clickedCol := clampInt(cx/int(charWidth), 0, e.GetLineCharCount(clickedLine))
-
 	dl := imgui.WindowDrawList()
 	for i := 0; i < linesToDraw; i++ {
 		dl.AddText(*drawStartPos, imgui.PackedColorFromVec4(imgui.Vec4{X: 1, Y: 1, Z: 1, W: 1}), string(e.GetLine(0+i).chars))
 		drawStartPos.Y += lineHeight
 	}
 
+	cx := clampInt(e.MouseX-int(paddedDrawStartPos.X), 0, int(winSize.X))
+	cy := clampInt(e.MouseY-int(paddedDrawStartPos.Y), 0, int(winSize.Y))
+
+	clickedLine := clampInt(cy/int(lineHeight), 0, e.LineCount)
+	clickedCol := cx / int(charWidth)
 	fmt.Printf("line,col: %v,%v\n", clickedLine, clickedCol)
 
-	origDrawStartPos.X += textPadding
-	origDrawStartPos.Y += textPadding
+	eee := e.GetLine(clickedLine)
+	tabCount, tabChars := getTabs(eee, clickedCol)
+
+	maxCol := len(eee.chars) - 1
+	if tabCount > 0 {
+		maxCol += clampInt(tabCount*settings.TabSize-1, 0, math.MaxInt)
+	}
+	finalCol := clampInt(clickedCol+tabChars, 0, maxCol)
+	if len(eee.chars) > 0 && finalCol > 0 {
+		x := finalCol - tabCount*settings.TabSize
+		println("!!!!", len(string(eee.chars)), "; C:", string(eee.chars[x]))
+	}
+
+	lineX := paddedDrawStartPos.X + float32(finalCol)*charWidth
 	lineStart := imgui.Vec2{
-		X: origDrawStartPos.X + float32(clickedCol)*charWidth,
-		Y: origDrawStartPos.Y + float32(clickedLine)*lineHeight - lineHeight*0.25,
+		X: lineX,
+		Y: paddedDrawStartPos.Y + float32(clickedLine)*lineHeight - lineHeight*0.25,
 	}
 	lineEnd := imgui.Vec2{
-		X: origDrawStartPos.X + float32(clickedCol)*charWidth,
-		Y: origDrawStartPos.Y + float32(clickedLine)*lineHeight + lineHeight*0.75,
+		X: lineX,
+		Y: paddedDrawStartPos.Y + float32(clickedLine)*lineHeight + lineHeight*0.75,
 	}
-	dl.AddLineV(lineStart, lineEnd, imgui.PackedColorFromVec4(imgui.Vec4{Z: 0.7, W: 1}), 5)
+
+	thickness := 0.2 * charWidth
+	dl.AddLineV(lineStart, lineEnd, imgui.PackedColorFromVec4(imgui.Vec4{Z: 0.7, W: 1}), thickness)
+}
+
+func getTabs(l *Line, col int) (tabCount, charsToOffsetBy int) {
+
+	for i := 0; i < len(l.chars) && i < col; i++ {
+		if l.chars[i] == '\t' {
+			tabCount++
+		}
+	}
+
+	charsToOffsetBy = tabCount * settings.TabSize
+	if tabCount == 0 {
+		return tabCount, charsToOffsetBy
+	}
+
+	charsToRemove := col / charsToOffsetBy * settings.TabSize
+	charsToRemove += col % charsToOffsetBy
+	return tabCount, clampInt(charsToOffsetBy-charsToRemove, 0, charsToOffsetBy)
 }
 
 func (e *Editor) GetLine(lineNum int) *Line {
