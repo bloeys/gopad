@@ -166,6 +166,11 @@ func (g *Gopad) Update() {
 		g.showErrorPopup()
 	}
 
+	if input.MouseClicked(sdl.BUTTON_LEFT) {
+		x, y := input.GetMousePos()
+		g.getActiveEditor().SetCursorPos(int(x), int(y))
+	}
+
 	//Close editor if needed
 	if input.KeyDown(sdl.K_LCTRL) && input.KeyClicked(sdl.K_w) {
 		g.closeEditor(g.activeEditor)
