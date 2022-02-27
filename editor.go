@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -39,11 +38,17 @@ type Editor struct {
 
 	LinesHead *LinesNode
 	LineCount int
+
+	StartPos float32
 }
 
 func (e *Editor) SetCursorPos(x, y int) {
 	e.MouseX = x
 	e.MouseY = y
+}
+
+func (e *Editor) SetStartPos(mouseDeltaNorm int32) {
+	e.StartPos = clampF32(e.StartPos+float32(-mouseDeltaNorm)*settings.ScrollSpeed, 0, float32(e.LineCount))
 }
 
 func (e *Editor) Render(drawStartPos, winSize *imgui.Vec2) {
@@ -68,17 +73,20 @@ func (e *Editor) Render(drawStartPos, winSize *imgui.Vec2) {
 	// println("Lines to draw:", linesToDraw)
 
 	dl := imgui.WindowDrawList()
-	for i := 0; i < linesToDraw; i++ {
+	startLine := clampInt(int(e.StartPos), 0, e.LineCount)
+	println("Start Pos: ", e.StartPos, "; Start line:", startLine)
+	for i := startLine; i < startLine+linesToDraw; i++ {
 		dl.AddText(*drawStartPos, imgui.PackedColorFromVec4(imgui.Vec4{X: 1, Y: 1, Z: 1, W: 1}), string(e.GetLine(0+i).chars))
 		drawStartPos.Y += lineHeight
 	}
 
+	//Draw cursor
 	cx := clampInt(e.MouseX-int(paddedDrawStartPos.X), 0, int(winSize.X))
 	cy := clampInt(e.MouseY-int(paddedDrawStartPos.Y), 0, int(winSize.Y))
 
 	clickedLine := clampInt(cy/int(lineHeight), 0, e.LineCount)
 	clickedCol := cx / int(charWidth)
-	fmt.Printf("line,col: %v,%v\n", clickedLine, clickedCol)
+	// fmt.Printf("line,col: %v,%v\n", clickedLine, clickedCol)
 
 	eee := e.GetLine(clickedLine)
 	tabCount, tabChars := getTabs(eee, clickedCol)
@@ -88,10 +96,10 @@ func (e *Editor) Render(drawStartPos, winSize *imgui.Vec2) {
 		maxCol += clampInt(tabCount*settings.TabSize, 0, math.MaxInt)
 	}
 	finalCol := clampInt(clickedCol+tabChars, 0, maxCol)
-	if len(eee.chars) > 0 && finalCol > 0 {
-		x := finalCol - tabCount*settings.TabSize
-		println("!!!!", len(string(eee.chars)), "; C:", string(eee.chars[x]))
-	}
+	// if len(eee.chars) > 0 && finalCol > 0 {
+	// 	x := finalCol - tabCount*settings.TabSize
+	// 	println("!!!!", len(string(eee.chars)), "; C:", string(eee.chars[x]))
+	// }
 
 	lineX := paddedDrawStartPos.X + float32(finalCol)*charWidth
 	lineStart := imgui.Vec2{
@@ -201,6 +209,19 @@ func NewLineNode() *LinesNode {
 	}
 
 	return &n
+}
+
+func clampF32(x, min, max float32) float32 {
+
+	if x > max {
+		return max
+	}
+
+	if x < min {
+		return min
+	}
+
+	return x
 }
 
 func clampInt(x, min, max int) int {

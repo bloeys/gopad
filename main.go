@@ -171,6 +171,10 @@ func (g *Gopad) Update() {
 		g.getActiveEditor().SetCursorPos(int(x), int(y))
 	}
 
+	if yMove := input.GetMouseWheelYNorm(); yMove != 0 {
+		g.getActiveEditor().SetStartPos(yMove)
+	}
+
 	//Close editor if needed
 	if input.KeyDown(sdl.K_LCTRL) && input.KeyClicked(sdl.K_w) {
 		g.closeEditor(g.activeEditor)
