@@ -6,9 +6,11 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/bloeys/gopad/settings"
 	"github.com/bloeys/nmage/engine"
 	"github.com/bloeys/nmage/input"
 	"github.com/bloeys/nmage/logging"
+	"github.com/bloeys/nmage/renderer/rend3dgl"
 	nmageimgui "github.com/bloeys/nmage/ui/imgui"
 	"github.com/inkyblackness/imgui-go/v4"
 	"github.com/veandco/go-sdl2/sdl"
@@ -56,7 +58,7 @@ func main() {
 		panic(err)
 	}
 
-	window, err := engine.CreateOpenGLWindowCentered("nMage", 1280, 720, engine.WindowFlags_RESIZABLE|engine.WindowFlags_ALLOW_HIGHDPI)
+	window, err := engine.CreateOpenGLWindowCentered("nMage", 1280, 720, engine.WindowFlags_RESIZABLE|engine.WindowFlags_ALLOW_HIGHDPI, rend3dgl.NewRend3DGL())
 	if err != nil {
 		logging.ErrLog.Fatalln("Failed to create window. Err: ", err)
 	}
@@ -86,13 +88,12 @@ func (g *Gopad) Init() {
 	g.Win.EventCallbacks = append(g.Win.EventCallbacks, g.handleWindowEvents)
 
 	//Setup font
-	var fontSize float32 = 16
 	fConfig := imgui.NewFontConfig()
 	defer fConfig.Delete()
 
 	fConfig.SetOversampleH(2)
 	fConfig.SetOversampleV(2)
-	g.mainFont = g.ImGUIInfo.AddFontTTF("./res/fonts/courier-prime.regular.ttf", fontSize, &fConfig, nil)
+	g.mainFont = g.ImGUIInfo.AddFontTTF("./res/fonts/courier-prime.regular.ttf", settings.FontSize, &fConfig, nil)
 
 	//Sidebar
 	g.CurrDirContents = getDirContents(g.CurrDir)
@@ -119,6 +120,15 @@ func (g *Gopad) Init() {
 	}
 
 	g.activeEditor = len(g.editors) - 1
+}
+
+func (g *Gopad) Start() {
+	imgui.PushFont(g.mainFont)
+	for i := 0; i < len(g.editors); i++ {
+		e := &g.editors[i]
+		e.RefreshFontSettings()
+	}
+	imgui.PopFont()
 }
 
 func (g *Gopad) handleWindowEvents(event sdl.Event) {
@@ -361,7 +371,8 @@ func (g *Gopad) getActiveEditor() *Editor {
 func (g *Gopad) getEditor(index int) *Editor {
 
 	if len(g.editors) == 0 {
-		e := Editor{FileName: "**scratch**"}
+		e := *NewScratchEditor()
+		e.RefreshFontSettings()
 		g.editors = append(g.editors, e)
 		g.activeEditor = 0
 		return &e
@@ -420,7 +431,9 @@ func (g *Gopad) handleFileClick(fPath string) {
 	}
 
 	//Read new file and switch to it
-	g.editors = append(g.editors, *NewEditor(fPath))
+	e := *NewEditor(fPath)
+	e.RefreshFontSettings()
+	g.editors = append(g.editors, e)
 	g.activeEditor = len(g.editors) - 1
 }
 

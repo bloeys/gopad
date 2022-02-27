@@ -39,6 +39,9 @@ type Editor struct {
 	LinesHead *LinesNode
 	LineCount int
 
+	LineHeight float32
+	CharWidth  float32
+
 	StartPos float32
 }
 
@@ -49,6 +52,23 @@ func (e *Editor) SetCursorPos(x, y int) {
 
 func (e *Editor) SetStartPos(mouseDeltaNorm int32) {
 	e.StartPos = clampF32(e.StartPos+float32(-mouseDeltaNorm)*settings.ScrollSpeed, 0, float32(e.LineCount))
+}
+
+func (e *Editor) RefreshFontSettings() {
+	e.LineHeight = imgui.TextLineHeightWithSpacing()
+
+	//NOTE: Because of 'https://github.com/ocornut/imgui/issues/792', CalcTextSize returns slightly incorrect width
+	//values for sentences than to be expected with singleCharWidth*sentenceCharCount. For example, with 3 chars at width 10
+	//we expect width of 30 (for a fixed-width font), but instead we might get 29.
+	// This is fixed in the newer releases, but imgui-go hasn't updated yet.
+	//
+	//That's why instead of getting width of one char, we get the average width from the width of a sentence, which helps us position
+	//cursors properly for now
+	e.CharWidth = imgui.CalcTextSize("abcdefghijklmnopqrstuvwxyz", false, 1000).X / 26
+}
+
+func (e *Editor) RoundToNearestChar(x float32) float32 {
+	return float32(math.Round(float64(x/e.CharWidth))) * e.CharWidth
 }
 
 func (e *Editor) Render(drawStartPos, winSize *imgui.Vec2) {
@@ -67,52 +87,42 @@ func (e *Editor) Render(drawStartPos, winSize *imgui.Vec2) {
 	paddedDrawStartPos := *drawStartPos
 
 	//Draw lines
-	lineHeight := imgui.TextLineHeightWithSpacing()
-	charWidth := imgui.CalcTextSize("a", false, 1000).X
-	linesToDraw := int(winSize.Y / lineHeight)
+	linesToDraw := int(winSize.Y / e.LineHeight)
 	// println("Lines to draw:", linesToDraw)
 
 	dl := imgui.WindowDrawList()
 	startLine := clampInt(int(e.StartPos), 0, e.LineCount)
-	println("Start Pos: ", e.StartPos, "; Start line:", startLine)
 	for i := startLine; i < startLine+linesToDraw; i++ {
 		dl.AddText(*drawStartPos, imgui.PackedColorFromVec4(imgui.Vec4{X: 1, Y: 1, Z: 1, W: 1}), string(e.GetLine(0+i).chars))
-		drawStartPos.Y += lineHeight
+		drawStartPos.Y += e.LineHeight
 	}
 
-	//Draw cursor
-	cx := clampInt(e.MouseX-int(paddedDrawStartPos.X), 0, int(winSize.X))
-	cy := clampInt(e.MouseY-int(paddedDrawStartPos.Y), 0, int(winSize.Y))
+	//Calculate position of cursor in window and grid coords.
+	//Window coords are as reported by SDL, but we correct for padding and snap to the nearest
+	//char window pos.
+	//
+	//Since gopad only supports fixed-width fonts, we treat the text area as a grid with each
+	//cell having identical width and one char.
+	clickedColWindowY := clampInt(e.MouseY-int(paddedDrawStartPos.Y), 0, math.MaxInt)
+	clickedColGridY := clampInt(clickedColWindowY/int(e.LineHeight), 0, e.LineCount)
 
-	clickedLine := clampInt(cy/int(lineHeight), 0, e.LineCount)
-	clickedCol := cx / int(charWidth)
-	// fmt.Printf("line,col: %v,%v\n", clickedLine, clickedCol)
+	clickedColWindowX := clampInt(int(e.RoundToNearestChar(float32(e.MouseX))), 0, math.MaxInt)
+	clickedColGridX := clickedColWindowX / int(e.CharWidth)
 
-	eee := e.GetLine(clickedLine)
-	tabCount, tabChars := getTabs(eee, clickedCol)
+	clickedLine := e.GetLine(startLine + clickedColGridY)
+	tabCount, _ := getTabs(clickedLine, clickedColGridX)
 
-	maxCol := len(eee.chars) - 1
-	if tabCount > 0 {
-		maxCol += clampInt(tabCount*settings.TabSize, 0, math.MaxInt)
-	}
-	finalCol := clampInt(clickedCol+tabChars, 0, maxCol)
-	// if len(eee.chars) > 0 && finalCol > 0 {
-	// 	x := finalCol - tabCount*settings.TabSize
-	// 	println("!!!!", len(string(eee.chars)), "; C:", string(eee.chars[x]))
-	// }
-
-	lineX := paddedDrawStartPos.X + float32(finalCol)*charWidth
+	textWidth := float32(len(clickedLine.chars)-tabCount+tabCount*settings.TabSize) * e.CharWidth
+	lineX := clampF32(float32(clickedColWindowX), 0, paddedDrawStartPos.X+textWidth)
 	lineStart := imgui.Vec2{
 		X: lineX,
-		Y: paddedDrawStartPos.Y + float32(clickedLine)*lineHeight - lineHeight*0.25,
+		Y: paddedDrawStartPos.Y + float32(clickedColGridY)*e.LineHeight - e.LineHeight*0.25,
 	}
 	lineEnd := imgui.Vec2{
 		X: lineX,
-		Y: paddedDrawStartPos.Y + float32(clickedLine)*lineHeight + lineHeight*0.75,
+		Y: paddedDrawStartPos.Y + float32(clickedColGridY)*e.LineHeight + e.LineHeight*0.75,
 	}
-
-	thickness := 0.2 * charWidth
-	dl.AddLineV(lineStart, lineEnd, imgui.PackedColorFromVec4(imgui.Vec4{Z: 0.7, W: 1}), thickness)
+	dl.AddLineV(lineStart, lineEnd, imgui.PackedColorFromVec4(imgui.Vec4{Z: 0.7, W: 1}), settings.CursorWidthFactor*e.CharWidth)
 }
 
 func getTabs(l *Line, col int) (tabCount, charsToOffsetBy int) {
@@ -247,6 +257,7 @@ func NewScratchEditor() *Editor {
 		FileName:  "**scratch**",
 		LinesHead: NewLineNode(),
 	}
+
 	return e
 }
 
