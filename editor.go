@@ -133,6 +133,7 @@ func (e *Editor) Render(drawStartPos, winSize *imgui.Vec2) {
 	dl.AddLineV(lineStart, lineEnd, imgui.PackedColorFromVec4(imgui.Vec4{Z: 0.7, W: 1}), settings.CursorWidthFactor*e.CharWidth)
 }
 
+//TODO: The offset chars must be how many grid cols between cursor col and the nearest non-tab char.
 func getTabs(l *Line, col int) (tabCount, charsToOffsetBy int) {
 
 	for i := 0; i < len(l.chars) && i < col; i++ {
