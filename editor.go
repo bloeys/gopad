@@ -85,7 +85,7 @@ func (e *Editor) Render(drawStartPos, winSize *imgui.Vec2) {
 
 	maxCol := len(eee.chars) - 1
 	if tabCount > 0 {
-		maxCol += clampInt(tabCount*settings.TabSize-1, 0, math.MaxInt)
+		maxCol += clampInt(tabCount*settings.TabSize, 0, math.MaxInt)
 	}
 	finalCol := clampInt(clickedCol+tabChars, 0, maxCol)
 	if len(eee.chars) > 0 && finalCol > 0 {
