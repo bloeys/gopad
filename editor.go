@@ -101,26 +101,34 @@ func (e *Editor) Render(drawStartPos, winSize *imgui.Vec2) {
 	//Window coords are as reported by SDL, but we correct for padding and snap to the nearest
 	//char window pos.
 	//
-	//Since gopad only supports fixed-width fonts, we treat the text area as a grid with each
+	//Since Gopad only supports fixed-width fonts, we treat the text area as a grid with each
 	//cell having identical width and one char.
-	clickedColWindowY := clampInt(e.MouseY-int(paddedDrawStartPos.Y), 0, math.MaxInt)
-	clickedColGridY := clampInt(clickedColWindowY/int(e.LineHeight), 0, e.LineCount)
+	//
+	//Global suffix means the position is in window coords.
+	//Editor suffix means coords are within the text editor coords, where sidebar and tabs have been adjusted for
+	clickedColWindowYEditor := clampInt(e.MouseY-int(paddedDrawStartPos.Y), 0, math.MaxInt)
+	clickedColGridYEditor := clampInt(clickedColWindowYEditor/int(e.LineHeight), 0, e.LineCount)
 
-	clickedColWindowX := clampInt(int(e.RoundToNearestChar(float32(e.MouseX))), 0, math.MaxInt)
-	clickedColGridX := clickedColWindowX / int(e.CharWidth)
+	clickedColWindowXGlobal := clampInt(int(e.RoundToNearestChar(float32(e.MouseX))), 0, math.MaxInt)
+	clickedColWindowXEditor := clampInt(int(e.RoundToNearestChar(float32(e.MouseX)-paddedDrawStartPos.X)), 0, math.MaxInt)
+	clickedColGridXEditor := clickedColWindowXEditor / int(e.CharWidth)
 
-	clickedLine := e.GetLine(startLine + clickedColGridY)
-	tabCount, _ := getTabs(clickedLine, clickedColGridX)
-
+	//Draw cursor
+	clickedLine := e.GetLine(startLine + clickedColGridYEditor)
+	tabCount, charOffsetFromTabs := getTabs(clickedLine, clickedColGridXEditor)
 	textWidth := float32(len(clickedLine.chars)-tabCount+tabCount*settings.TabSize) * e.CharWidth
-	lineX := clampF32(float32(clickedColWindowX), 0, paddedDrawStartPos.X+textWidth)
+	lineX := clampF32(
+		e.RoundToNearestChar(float32(clickedColWindowXGlobal)+float32(charOffsetFromTabs)*e.CharWidth),
+		0,
+		paddedDrawStartPos.X+textWidth,
+	)
 	lineStart := imgui.Vec2{
 		X: lineX,
-		Y: paddedDrawStartPos.Y + float32(clickedColGridY)*e.LineHeight - e.LineHeight*0.25,
+		Y: paddedDrawStartPos.Y + float32(clickedColGridYEditor)*e.LineHeight - e.LineHeight*0.25,
 	}
 	lineEnd := imgui.Vec2{
 		X: lineX,
-		Y: paddedDrawStartPos.Y + float32(clickedColGridY)*e.LineHeight + e.LineHeight*0.75,
+		Y: paddedDrawStartPos.Y + float32(clickedColGridYEditor)*e.LineHeight + e.LineHeight*0.75,
 	}
 	dl.AddLineV(lineStart, lineEnd, imgui.PackedColorFromVec4(imgui.Vec4{Z: 0.7, W: 1}), settings.CursorWidthFactor*e.CharWidth)
 }
@@ -206,6 +214,11 @@ func ParseLines(fileContents string) (*LinesNode, int) {
 			currNode.Next = NewLineNode()
 			currNode = currNode.Next
 		}
+	}
+
+	if fileContents[len(fileContents)-1] != '\n' {
+		lineCount++
+		currNode.Lines[currLine].chars = []rune(fileContents[start:end])
 	}
 
 	return head, lineCount
