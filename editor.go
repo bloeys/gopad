@@ -162,6 +162,7 @@ func (e *Editor) Insert(posInfo *MousePosInfo, rs []rune) {
 	if len(rs) == 0 {
 		return
 	}
+	e.IsModified = true
 
 	l := posInfo.Line
 	if len(l.chars) == 0 {
@@ -199,6 +200,7 @@ func (e *Editor) Delete(posInfo *MousePosInfo, count int) {
 	if len(l.chars) == 0 {
 		return
 	}
+	e.IsModified = true
 
 	if count >= len(l.chars) {
 		l.chars = []rune{}
@@ -210,8 +212,21 @@ func (e *Editor) Delete(posInfo *MousePosInfo, count int) {
 		return
 	}
 
+	//Count tabs that will be deleted
+	tabCount := 0
+	for i := charIndex - count + 1; i < charIndex+1; i++ {
+		if l.chars[i] == '\t' {
+			tabCount++
+		}
+	}
+
 	l.chars = append(l.chars[:charIndex-count+1], l.chars[charIndex+1:]...)
-	e.MoveMouseXByChars(-1, posInfo)
+
+	if tabCount == 0 {
+		e.MoveMouseXByChars(-1, posInfo)
+	} else {
+		e.MoveMouseXByChars(-tabCount*settings.TabSize, posInfo)
+	}
 }
 
 func (e *Editor) MoveMouseXByChars(charCount int, posInfo *MousePosInfo) {
