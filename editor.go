@@ -9,6 +9,7 @@ import (
 	"github.com/inkyblackness/imgui-go/v4"
 )
 
+// hello		there my friend
 const (
 	linesPerNode = 100
 	textPadding  = 10
@@ -67,7 +68,7 @@ func (e *Editor) RefreshFontSettings() {
 	e.CharWidth = imgui.CalcTextSize("abcdefghijklmnopqrstuvwxyz", false, 1000).X / 26
 }
 
-func (e *Editor) RoundToNearestChar(x float32) float32 {
+func (e *Editor) RoundToGrid(x float32) float32 {
 	return float32(math.Round(float64(x/e.CharWidth))) * e.CharWidth
 }
 
@@ -102,26 +103,26 @@ func (e *Editor) Render(drawStartPos, winSize *imgui.Vec2) {
 	//char window pos.
 	//
 	//Since Gopad only supports fixed-width fonts, we treat the text area as a grid with each
-	//cell having identical width and one char.
+	//cell having identical width and one char inside.
 	//
-	//Global suffix means the position is in window coords.
-	//Editor suffix means coords are within the text editor coords, where sidebar and tabs have been adjusted for
+	//'Global' suffix means the position is in window coords.
+	//'Editor' suffix means coords are within the text editor coords, where sidebar and tabs have been adjusted for
 	clickedColWindowYEditor := clampInt(e.MouseY-int(paddedDrawStartPos.Y), 0, math.MaxInt)
 	clickedColGridYEditor := clampInt(clickedColWindowYEditor/int(e.LineHeight), 0, e.LineCount)
 
-	clickedColWindowXGlobal := clampInt(int(e.RoundToNearestChar(float32(e.MouseX))), 0, math.MaxInt)
-	clickedColWindowXEditor := clampInt(int(e.RoundToNearestChar(float32(e.MouseX)-paddedDrawStartPos.X)), 0, math.MaxInt)
-	clickedColGridXEditor := clickedColWindowXEditor / int(e.CharWidth)
-
+	roundedMouseX := e.RoundToGrid(float32(e.MouseX))
+	clickedColWindowXGlobal := clampInt(int(roundedMouseX), 0, math.MaxInt)
+	clickedColGridXEditor := int(
+		roundF32(
+			(float32(clickedColWindowXGlobal) - paddedDrawStartPos.X) / e.CharWidth,
+		))
 	//Draw cursor
 	clickedLine := e.GetLine(startLine + clickedColGridYEditor)
-	tabCount, charOffsetFromTabs := getTabs(clickedLine, clickedColGridXEditor)
+	tabCount, _ := getTabs(clickedLine, clickedColGridXEditor)
+
 	textWidth := float32(len(clickedLine.chars)-tabCount+tabCount*settings.TabSize) * e.CharWidth
-	lineX := clampF32(
-		e.RoundToNearestChar(float32(clickedColWindowXGlobal)+float32(charOffsetFromTabs)*e.CharWidth),
-		0,
-		paddedDrawStartPos.X+textWidth,
-	)
+	lineX := clampF32(float32(clickedColWindowXGlobal), 0, paddedDrawStartPos.X+textWidth)
+
 	lineStart := imgui.Vec2{
 		X: lineX,
 		Y: paddedDrawStartPos.Y + float32(clickedColGridYEditor)*e.LineHeight - e.LineHeight*0.25,
@@ -130,13 +131,45 @@ func (e *Editor) Render(drawStartPos, winSize *imgui.Vec2) {
 		X: lineX,
 		Y: paddedDrawStartPos.Y + float32(clickedColGridYEditor)*e.LineHeight + e.LineHeight*0.75,
 	}
-	dl.AddLineV(lineStart, lineEnd, imgui.PackedColorFromVec4(imgui.Vec4{Z: 0.7, W: 1}), settings.CursorWidthFactor*e.CharWidth)
+	dl.AddLineV(lineStart, lineEnd, imgui.PackedColorFromVec4(settings.CursorColor), settings.CursorWidthFactor*e.CharWidth)
+
+	// charAtCursor := getCharLeftOfCursor(clickedLine, clickedColGridXEditor)
+	// println("Chars:", "'"+charAtCursor+"'", ";", clickedColGridXEditor)
+}
+
+func getCharLeftOfCursor(l *Line, cursorGridX int) string {
+
+	if cursorGridX <= 0 || len(l.chars) == 0 {
+		return ""
+	}
+
+	gridSize := 0
+	for i := 0; i < len(l.chars) && i <= cursorGridX; i++ {
+
+		if l.chars[i] == '\t' {
+			gridSize += settings.TabSize
+		} else {
+			gridSize++
+		}
+
+		if gridSize < cursorGridX {
+			continue
+		}
+
+		return string(l.chars[i])
+	}
+
+	if cursorGridX >= gridSize {
+		return string(l.chars[len(l.chars)-1])
+	}
+
+	return ""
 }
 
 //TODO: The offset chars must be how many grid cols between cursor col and the nearest non-tab char.
-func getTabs(l *Line, col int) (tabCount, charsToOffsetBy int) {
+func getTabs(l *Line, gridPosX int) (tabCount, charsToOffsetBy int) {
 
-	for i := 0; i < len(l.chars) && i < col; i++ {
+	for i := 0; i < len(l.chars) && i < gridPosX; i++ {
 		if l.chars[i] == '\t' {
 			tabCount++
 		}
@@ -147,8 +180,8 @@ func getTabs(l *Line, col int) (tabCount, charsToOffsetBy int) {
 		return tabCount, charsToOffsetBy
 	}
 
-	charsToRemove := col / charsToOffsetBy * settings.TabSize
-	charsToRemove += col % charsToOffsetBy
+	charsToRemove := gridPosX / charsToOffsetBy * settings.TabSize
+	charsToRemove += gridPosX % charsToOffsetBy
 	return tabCount, clampInt(charsToOffsetBy-charsToRemove, 0, charsToOffsetBy)
 }
 

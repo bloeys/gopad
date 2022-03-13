@@ -4,7 +4,7 @@ go 1.17
 
 require (
 	github.com/bloeys/nmage v0.0.10
-	github.com/inkyblackness/imgui-go/v4 v4.3.0
+	github.com/inkyblackness/imgui-go/v4 v4.4.0
 	github.com/veandco/go-sdl2 v0.4.14
 )
 
