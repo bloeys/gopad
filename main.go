@@ -35,6 +35,7 @@ type Gopad struct {
 	editorToClose    int
 	activeEditor     int
 	lastActiveEditor int
+	newRunes         []rune
 
 	//Errors
 	haveErr bool
@@ -76,6 +77,7 @@ func main() {
 		editors:            []Editor{*NewScratchEditor()},
 		editorToClose:      -1,
 		sidebarWidthFactor: 0.15,
+		newRunes:           []rune{},
 	}
 
 	// engine.SetVSync(true)
@@ -137,6 +139,7 @@ func (g *Gopad) handleWindowEvents(event sdl.Event) {
 
 	case *sdl.TextEditingEvent:
 	case *sdl.TextInputEvent:
+		g.newRunes = append(g.newRunes, []rune(e.GetText())...)
 	case *sdl.WindowEvent:
 		if e.Event == sdl.WINDOWEVENT_SIZE_CHANGED {
 			w, h := g.Win.SDLWin.GetSize()
@@ -191,8 +194,9 @@ func (g *Gopad) Update() {
 		g.editorToClose = -1
 	}
 
-	//Save if needed
 	e := g.getActiveEditor()
+
+	//Save if needed
 	if !e.IsModified {
 		return
 	}
@@ -352,8 +356,11 @@ func (g *Gopad) drawEditors() {
 	tabsHeight := imgui.WindowHeight()
 	imgui.End()
 
-	//Draw text area
-	g.getActiveEditor().Render(&imgui.Vec2{X: g.sidebarWidthPx, Y: g.mainMenuBarHeight + tabsHeight}, &imgui.Vec2{X: g.winWidth - g.sidebarWidthPx, Y: g.winHeight - g.mainMenuBarHeight - tabsHeight})
+	g.getActiveEditor().UpdateAndDraw(
+		&imgui.Vec2{X: g.sidebarWidthPx, Y: g.mainMenuBarHeight + tabsHeight},
+		&imgui.Vec2{X: g.winWidth - g.sidebarWidthPx, Y: g.winHeight - g.mainMenuBarHeight - tabsHeight},
+		g.newRunes,
+	)
 
 	if shouldForceSwitch || prevActiveEditor != g.activeEditor {
 		imgui.SetKeyboardFocusHereV(-1)
@@ -438,6 +445,7 @@ func (g *Gopad) handleFileClick(fPath string) {
 }
 
 func (g *Gopad) FrameEnd() {
+	g.newRunes = []rune{}
 }
 
 func (g *Gopad) ShouldRun() bool {

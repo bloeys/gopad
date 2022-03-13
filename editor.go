@@ -72,7 +72,7 @@ func (e *Editor) RoundToGrid(x float32) float32 {
 	return float32(math.Round(float64(x/e.CharWidth))) * e.CharWidth
 }
 
-func (e *Editor) Render(drawStartPos, winSize *imgui.Vec2) {
+func (e *Editor) UpdateAndDraw(drawStartPos, winSize *imgui.Vec2, newRunes []rune) {
 
 	//Draw window
 	imgui.SetNextWindowPos(*drawStartPos)
@@ -87,16 +87,53 @@ func (e *Editor) Render(drawStartPos, winSize *imgui.Vec2) {
 	drawStartPos.Y += textPadding
 	paddedDrawStartPos := *drawStartPos
 
-	//Draw lines
-	linesToDraw := int(winSize.Y / e.LineHeight)
-	// println("Lines to draw:", linesToDraw)
-
+	//Draw text
 	dl := imgui.WindowDrawList()
+	linesToDraw := int(winSize.Y / e.LineHeight)
 	startLine := clampInt(int(e.StartPos), 0, e.LineCount)
 	for i := startLine; i < startLine+linesToDraw; i++ {
 		dl.AddText(*drawStartPos, imgui.PackedColorFromVec4(imgui.Vec4{X: 1, Y: 1, Z: 1, W: 1}), string(e.GetLine(0+i).chars))
 		drawStartPos.Y += e.LineHeight
 	}
+
+	posInfo := e.getPositions(&paddedDrawStartPos)
+	tabCount, charsToOffsetBy := getTabs(posInfo.Line, posInfo.GridXEditor)
+
+	textWidth := float32(len(posInfo.Line.chars)-tabCount+tabCount*settings.TabSize) * e.CharWidth
+	lineX := clampF32(float32(posInfo.GridXGlobal)+float32(charsToOffsetBy)*e.CharWidth, 0, paddedDrawStartPos.X+textWidth)
+
+	lineStart := imgui.Vec2{
+		X: lineX,
+		Y: paddedDrawStartPos.Y + float32(posInfo.GridYEditor)*e.LineHeight - e.LineHeight*0.25,
+	}
+	lineEnd := imgui.Vec2{
+		X: lineX,
+		Y: paddedDrawStartPos.Y + float32(posInfo.GridYEditor)*e.LineHeight + e.LineHeight*0.75,
+	}
+	dl.AddLineV(lineStart, lineEnd, imgui.PackedColorFromVec4(settings.CursorColor), settings.CursorWidthFactor*e.CharWidth)
+
+	// charAtCursor := getCharFromCursor(clickedLine, clickedColGridXEditor)
+	// println("Chars:", "'"+charAtCursor+"'", ";", clickedColGridXEditor)
+}
+
+type mousePosInfo struct {
+
+	//Global represents a grid on the whole window (i.e. 0,0 is the top left of the program window)
+	GridXGlobal int
+	//Global represents a grid on the whole window (i.e. 0,0 is the top left of the program window)
+	GridYGlobal int
+
+	//Editor represents a grid on the editor window (i.e. 0,0 is the top left of the editor window)
+	GridXEditor int
+	//Editor represents a grid on the editor window (i.e. 0,0 is the top left of the editor window)
+	GridYEditor int
+
+	//Line is the currently selected line
+	Line    *Line
+	LineNum int
+}
+
+func (e *Editor) getPositions(paddedDrawStartPos *imgui.Vec2) mousePosInfo {
 
 	//Calculate position of cursor in window and grid coords.
 	//Window coords are as reported by SDL, but we correct for padding and snap to the nearest
@@ -107,36 +144,34 @@ func (e *Editor) Render(drawStartPos, winSize *imgui.Vec2) {
 	//
 	//'Global' suffix means the position is in window coords.
 	//'Editor' suffix means coords are within the text editor coords, where sidebar and tabs have been adjusted for
-	clickedColWindowYEditor := clampInt(e.MouseY-int(paddedDrawStartPos.Y), 0, math.MaxInt)
-	clickedColGridYEditor := clampInt(clickedColWindowYEditor/int(e.LineHeight), 0, e.LineCount)
 
 	roundedMouseX := e.RoundToGrid(float32(e.MouseX))
-	clickedColWindowXGlobal := clampInt(int(roundedMouseX), 0, math.MaxInt)
-	clickedColGridXEditor := int(
+	gridXGlobal := clampInt(int(roundedMouseX), 0, math.MaxInt)
+
+	roundedMouseY := e.RoundToGrid(float32(e.MouseY))
+	gridYGlobal := clampInt(int(roundedMouseY), 0, math.MaxInt)
+
+	gridXEditor := int(
 		roundF32(
-			(float32(clickedColWindowXGlobal) - paddedDrawStartPos.X) / e.CharWidth,
-		))
+			(float32(gridXGlobal) - paddedDrawStartPos.X) / e.CharWidth,
+		),
+	)
 
-	//Draw cursor
-	clickedLine := e.GetLine(startLine + clickedColGridYEditor)
-	tabCount, charsToOffsetBy := getTabs(clickedLine, clickedColGridXEditor)
-	println("!!", charsToOffsetBy)
+	windowYEditor := clampInt(e.MouseY-int(paddedDrawStartPos.Y), 0, math.MaxInt)
+	gridYEditor := clampInt(windowYEditor/int(e.LineHeight), 0, e.LineCount)
 
-	textWidth := float32(len(clickedLine.chars)-tabCount+tabCount*settings.TabSize) * e.CharWidth
-	lineX := clampF32(float32(clickedColWindowXGlobal)+float32(charsToOffsetBy)*e.CharWidth, 0, paddedDrawStartPos.X+textWidth)
+	startLineIndex := clampInt(int(e.StartPos), 0, e.LineCount)
+	return mousePosInfo{
 
-	lineStart := imgui.Vec2{
-		X: lineX,
-		Y: paddedDrawStartPos.Y + float32(clickedColGridYEditor)*e.LineHeight - e.LineHeight*0.25,
+		GridXGlobal: gridXGlobal,
+		GridYGlobal: gridYGlobal,
+
+		GridXEditor: gridXEditor,
+		GridYEditor: gridYEditor,
+
+		Line:    e.GetLine(startLineIndex + gridYEditor),
+		LineNum: startLineIndex + gridYEditor,
 	}
-	lineEnd := imgui.Vec2{
-		X: lineX,
-		Y: paddedDrawStartPos.Y + float32(clickedColGridYEditor)*e.LineHeight + e.LineHeight*0.75,
-	}
-	dl.AddLineV(lineStart, lineEnd, imgui.PackedColorFromVec4(settings.CursorColor), settings.CursorWidthFactor*e.CharWidth)
-
-	// charAtCursor := getCharFromCursor(clickedLine, clickedColGridXEditor)
-	// println("Chars:", "'"+charAtCursor+"'", ";", clickedColGridXEditor)
 }
 
 func getCharFromCursor(l *Line, cursorGridX int) string {
