@@ -116,12 +116,14 @@ func (e *Editor) Render(drawStartPos, winSize *imgui.Vec2) {
 		roundF32(
 			(float32(clickedColWindowXGlobal) - paddedDrawStartPos.X) / e.CharWidth,
 		))
+
 	//Draw cursor
 	clickedLine := e.GetLine(startLine + clickedColGridYEditor)
-	tabCount, _ := getTabs(clickedLine, clickedColGridXEditor)
+	tabCount, charsToOffsetBy := getTabs(clickedLine, clickedColGridXEditor)
+	println("!!", charsToOffsetBy)
 
 	textWidth := float32(len(clickedLine.chars)-tabCount+tabCount*settings.TabSize) * e.CharWidth
-	lineX := clampF32(float32(clickedColWindowXGlobal), 0, paddedDrawStartPos.X+textWidth)
+	lineX := clampF32(float32(clickedColWindowXGlobal)+float32(charsToOffsetBy)*e.CharWidth, 0, paddedDrawStartPos.X+textWidth)
 
 	lineStart := imgui.Vec2{
 		X: lineX,
@@ -133,14 +135,22 @@ func (e *Editor) Render(drawStartPos, winSize *imgui.Vec2) {
 	}
 	dl.AddLineV(lineStart, lineEnd, imgui.PackedColorFromVec4(settings.CursorColor), settings.CursorWidthFactor*e.CharWidth)
 
-	// charAtCursor := getCharLeftOfCursor(clickedLine, clickedColGridXEditor)
+	// charAtCursor := getCharFromCursor(clickedLine, clickedColGridXEditor)
 	// println("Chars:", "'"+charAtCursor+"'", ";", clickedColGridXEditor)
 }
 
-func getCharLeftOfCursor(l *Line, cursorGridX int) string {
+func getCharFromCursor(l *Line, cursorGridX int) string {
+	i := getCharIndexFromCursor(l, cursorGridX)
+	if i == -1 {
+		return ""
+	}
+	return string(l.chars[i])
+}
+
+func getCharIndexFromCursor(l *Line, cursorGridX int) int {
 
 	if cursorGridX <= 0 || len(l.chars) == 0 {
-		return ""
+		return -1
 	}
 
 	gridSize := 0
@@ -156,33 +166,40 @@ func getCharLeftOfCursor(l *Line, cursorGridX int) string {
 			continue
 		}
 
-		return string(l.chars[i])
+		return i
 	}
 
 	if cursorGridX >= gridSize {
-		return string(l.chars[len(l.chars)-1])
+		return len(l.chars) - 1
 	}
 
-	return ""
+	return -1
 }
 
 //TODO: The offset chars must be how many grid cols between cursor col and the nearest non-tab char.
 func getTabs(l *Line, gridPosX int) (tabCount, charsToOffsetBy int) {
 
-	for i := 0; i < len(l.chars) && i < gridPosX; i++ {
+	charIndex := getCharIndexFromCursor(l, gridPosX)
+	if charIndex == -1 {
+		return 0, 0
+	}
+
+	//gridSize represents the visual grid (e.g. \tHi has a visual grid size of 'tabSize+2')
+	gridSize := 0
+	for i := charIndex; i >= 0; i-- {
 		if l.chars[i] == '\t' {
 			tabCount++
+			gridSize += settings.TabSize
+		} else {
+			gridSize++
 		}
 	}
 
-	charsToOffsetBy = tabCount * settings.TabSize
-	if tabCount == 0 {
-		return tabCount, charsToOffsetBy
+	if l.chars[charIndex] != '\t' {
+		return tabCount, 0
 	}
 
-	charsToRemove := gridPosX / charsToOffsetBy * settings.TabSize
-	charsToRemove += gridPosX % charsToOffsetBy
-	return tabCount, clampInt(charsToOffsetBy-charsToRemove, 0, charsToOffsetBy)
+	return tabCount, gridSize - gridPosX
 }
 
 func (e *Editor) GetLine(lineNum int) *Line {
