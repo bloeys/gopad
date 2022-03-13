@@ -6,7 +6,9 @@ import (
 	"path/filepath"
 
 	"github.com/bloeys/gopad/settings"
+	"github.com/bloeys/nmage/input"
 	"github.com/inkyblackness/imgui-go/v4"
+	"github.com/veandco/go-sdl2/sdl"
 )
 
 // hello		there my friend
@@ -46,6 +48,23 @@ type Editor struct {
 	StartPos float32
 }
 
+type MousePosInfo struct {
+
+	//Global represents a grid on the whole window (i.e. 0,0 is the top left of the program window)
+	GridXGlobal int
+	//Global represents a grid on the whole window (i.e. 0,0 is the top left of the program window)
+	GridYGlobal int
+
+	//Editor represents a grid on the editor window (i.e. 0,0 is the top left of the editor window)
+	GridXEditor int
+	//Editor represents a grid on the editor window (i.e. 0,0 is the top left of the editor window)
+	GridYEditor int
+
+	//Line is the currently selected line
+	Line    *Line
+	LineNum int
+}
+
 func (e *Editor) SetCursorPos(x, y int) {
 	e.MouseX = x
 	e.MouseY = y
@@ -68,8 +87,12 @@ func (e *Editor) RefreshFontSettings() {
 	e.CharWidth = imgui.CalcTextSize("abcdefghijklmnopqrstuvwxyz", false, 1000).X / 26
 }
 
-func (e *Editor) RoundToGrid(x float32) float32 {
-	return float32(math.Round(float64(x/e.CharWidth))) * e.CharWidth
+func (e *Editor) RoundToGridX(x float32) float32 {
+	return clampF32(float32(math.Round(float64(x/e.CharWidth)))*e.CharWidth, 0, math.MaxFloat32)
+}
+
+func (e *Editor) RoundToGridY(x float32) float32 {
+	return clampF32(float32(math.Round(float64(x/e.LineHeight)))*e.LineHeight, 0, math.MaxFloat32)
 }
 
 func (e *Editor) UpdateAndDraw(drawStartPos, winSize *imgui.Vec2, newRunes []rune) {
@@ -87,6 +110,26 @@ func (e *Editor) UpdateAndDraw(drawStartPos, winSize *imgui.Vec2, newRunes []run
 	drawStartPos.Y += textPadding
 	paddedDrawStartPos := *drawStartPos
 
+	//Make edits
+	posInfo := e.getPositions(&paddedDrawStartPos)
+	e.Insert(&posInfo, newRunes)
+
+	if input.KeyClicked(sdl.K_LEFT) {
+		e.MoveMouseXByChars(-1, &posInfo)
+	} else if input.KeyClicked(sdl.K_RIGHT) {
+		e.MoveMouseXByChars(1, &posInfo)
+	}
+
+	if input.KeyClicked(sdl.K_UP) {
+		e.MoveMouseYByLines(-1, &posInfo)
+	} else if input.KeyClicked(sdl.K_DOWN) {
+		e.MoveMouseYByLines(1, &posInfo)
+	}
+
+	if input.KeyClicked(sdl.K_BACKSPACE) {
+		e.Delete(&posInfo, 1)
+	}
+
 	//Draw text
 	dl := imgui.WindowDrawList()
 	linesToDraw := int(winSize.Y / e.LineHeight)
@@ -96,9 +139,7 @@ func (e *Editor) UpdateAndDraw(drawStartPos, winSize *imgui.Vec2, newRunes []run
 		drawStartPos.Y += e.LineHeight
 	}
 
-	posInfo := e.getPositions(&paddedDrawStartPos)
 	tabCount, charsToOffsetBy := getTabs(posInfo.Line, posInfo.GridXEditor)
-
 	textWidth := float32(len(posInfo.Line.chars)-tabCount+tabCount*settings.TabSize) * e.CharWidth
 	lineX := clampF32(float32(posInfo.GridXGlobal)+float32(charsToOffsetBy)*e.CharWidth, 0, paddedDrawStartPos.X+textWidth)
 
@@ -116,24 +157,92 @@ func (e *Editor) UpdateAndDraw(drawStartPos, winSize *imgui.Vec2, newRunes []run
 	// println("Chars:", "'"+charAtCursor+"'", ";", clickedColGridXEditor)
 }
 
-type mousePosInfo struct {
+func (e *Editor) Insert(posInfo *MousePosInfo, rs []rune) {
 
-	//Global represents a grid on the whole window (i.e. 0,0 is the top left of the program window)
-	GridXGlobal int
-	//Global represents a grid on the whole window (i.e. 0,0 is the top left of the program window)
-	GridYGlobal int
+	if len(rs) == 0 {
+		return
+	}
 
-	//Editor represents a grid on the editor window (i.e. 0,0 is the top left of the editor window)
-	GridXEditor int
-	//Editor represents a grid on the editor window (i.e. 0,0 is the top left of the editor window)
-	GridYEditor int
+	l := posInfo.Line
+	if len(l.chars) == 0 {
+		l.chars = append(l.chars, rs...)
+		return
+	}
 
-	//Line is the currently selected line
-	Line    *Line
-	LineNum int
+	charIndex := getCharIndexFromCursor(posInfo.Line, posInfo.GridXEditor)
+	if charIndex == -1 {
+		charIndex = 0
+	} else if charIndex == len(l.chars)-1 {
+		l.chars = append(l.chars, rs...)
+		return
+	} else {
+		charIndex++
+	}
+
+	//Make a new array that can accomodate the changes
+	c := l.chars
+	newLength := len(c) + len(rs)
+	l.chars = make([]rune, newLength)
+
+	//Copy the left half (before the changes), then copy the changes in the new space, and
+	//lastly copy the pushed elements to the right of the changes
+	copy(l.chars, c[:charIndex])
+	copy(l.chars[charIndex:], rs)
+	copy(l.chars[charIndex+len(rs):], c[charIndex:])
+
+	e.MoveMouseXByChars(len(rs), posInfo)
 }
 
-func (e *Editor) getPositions(paddedDrawStartPos *imgui.Vec2) mousePosInfo {
+func (e *Editor) Delete(posInfo *MousePosInfo, count int) {
+
+	l := posInfo.Line
+	if len(l.chars) == 0 {
+		return
+	}
+
+	if count >= len(l.chars) {
+		l.chars = []rune{}
+		return
+	}
+
+	charIndex := getCharIndexFromCursor(l, posInfo.GridXEditor)
+	if charIndex == -1 {
+		return
+	}
+
+	l.chars = append(l.chars[:charIndex-count+1], l.chars[charIndex+1:]...)
+	e.MoveMouseXByChars(-1, posInfo)
+}
+
+func (e *Editor) MoveMouseXByChars(charCount int, posInfo *MousePosInfo) {
+
+	if posInfo.GridXEditor == 0 && charCount < 0 {
+		return
+	}
+
+	delta := float32(charCount) * e.CharWidth
+	e.MouseX = int(e.RoundToGridX(float32(e.MouseX) + delta))
+	posInfo.GridXGlobal = int(e.RoundToGridX(float32(posInfo.GridXGlobal) + delta))
+	posInfo.GridXEditor = int(e.RoundToGridX(float32(posInfo.GridXEditor) + delta))
+}
+
+func (e *Editor) MoveMouseYByLines(lineCount int, posInfo *MousePosInfo) {
+
+	if lineCount < 0 && posInfo.LineNum == 0 {
+		return
+	}
+
+	if lineCount > 0 && posInfo.LineNum == e.LineCount {
+		return
+	}
+
+	delta := float32(lineCount) * e.LineHeight
+	e.MouseY = int(e.RoundToGridY(float32(e.MouseY) + delta))
+	posInfo.GridYGlobal = int(e.RoundToGridY(float32(posInfo.GridYGlobal) + delta))
+	posInfo.GridYEditor = int(e.RoundToGridY(float32(posInfo.GridYEditor) + delta))
+}
+
+func (e *Editor) getPositions(paddedDrawStartPos *imgui.Vec2) MousePosInfo {
 
 	//Calculate position of cursor in window and grid coords.
 	//Window coords are as reported by SDL, but we correct for padding and snap to the nearest
@@ -145,10 +254,10 @@ func (e *Editor) getPositions(paddedDrawStartPos *imgui.Vec2) mousePosInfo {
 	//'Global' suffix means the position is in window coords.
 	//'Editor' suffix means coords are within the text editor coords, where sidebar and tabs have been adjusted for
 
-	roundedMouseX := e.RoundToGrid(float32(e.MouseX))
+	roundedMouseX := e.RoundToGridX(float32(e.MouseX))
 	gridXGlobal := clampInt(int(roundedMouseX), 0, math.MaxInt)
 
-	roundedMouseY := e.RoundToGrid(float32(e.MouseY))
+	roundedMouseY := e.RoundToGridY(float32(e.MouseY))
 	gridYGlobal := clampInt(int(roundedMouseY), 0, math.MaxInt)
 
 	gridXEditor := int(
@@ -161,7 +270,7 @@ func (e *Editor) getPositions(paddedDrawStartPos *imgui.Vec2) mousePosInfo {
 	gridYEditor := clampInt(windowYEditor/int(e.LineHeight), 0, e.LineCount)
 
 	startLineIndex := clampInt(int(e.StartPos), 0, e.LineCount)
-	return mousePosInfo{
+	return MousePosInfo{
 
 		GridXGlobal: gridXGlobal,
 		GridYGlobal: gridYGlobal,
