@@ -22,7 +22,6 @@ type Gopad struct {
 	Win       *engine.Window
 	mainFont  imgui.Font
 	ImGUIInfo nmageimgui.ImguiInfo
-	Quitting  bool
 
 	mainMenuBarHeight  float32
 	sidebarWidthFactor float32
@@ -45,8 +44,6 @@ type Gopad struct {
 	winWidth  float32
 	winHeight float32
 }
-
-var ()
 
 func main() {
 
@@ -80,22 +77,29 @@ func main() {
 		newRunes:           []rune{},
 	}
 
+	// Init runs within an imgui frame, but imgui frames do NOT allow adding fonts,
+	// so we do it here
+	g.LoadFonts()
+
 	// engine.SetVSync(true)
-	engine.Run(&g)
+	engine.Run(&g, g.Win, g.ImGUIInfo)
+}
+
+func (g *Gopad) LoadFonts() {
+
+	fConfig := imgui.NewFontConfig()
+	fConfig.SetOversampleH(2)
+	fConfig.SetOversampleV(2)
+
+	g.mainFont = g.ImGUIInfo.AddFontTTF("./res/fonts/courier-prime.regular.ttf", settings.FontSize, &fConfig, nil)
+
+	fConfig.Delete()
 }
 
 func (g *Gopad) Init() {
 
 	g.Win.SDLWin.SetTitle("Gopad")
 	g.Win.EventCallbacks = append(g.Win.EventCallbacks, g.handleWindowEvents)
-
-	//Setup font
-	fConfig := imgui.NewFontConfig()
-	defer fConfig.Delete()
-
-	fConfig.SetOversampleH(2)
-	fConfig.SetOversampleV(2)
-	g.mainFont = g.ImGUIInfo.AddFontTTF("./res/fonts/courier-prime.regular.ttf", settings.FontSize, &fConfig, nil)
 
 	//Sidebar
 	g.CurrDirContents = getDirContents(g.CurrDir)
@@ -122,9 +126,8 @@ func (g *Gopad) Init() {
 	}
 
 	g.activeEditor = len(g.editors) - 1
-}
 
-func (g *Gopad) Start() {
+	// Prepare editors
 	imgui.PushFont(g.mainFont)
 	for i := 0; i < len(g.editors); i++ {
 		e := &g.editors[i]
@@ -150,14 +153,6 @@ func (g *Gopad) handleWindowEvents(event sdl.Event) {
 	}
 }
 
-func (g *Gopad) FrameStart() {
-
-	if g.editorToClose > -1 {
-		g.closeEditor(g.editorToClose)
-		g.editorToClose = -1
-	}
-}
-
 func (g *Gopad) closeEditor(eIndex int) {
 
 	g.editors = append(g.editors[:eIndex], g.editors[eIndex+1:]...)
@@ -172,7 +167,14 @@ func (g *Gopad) closeEditor(eIndex int) {
 func (g *Gopad) Update() {
 
 	if input.IsQuitClicked() {
-		g.Quitting = true
+		engine.Quit()
+		return
+	}
+
+	// Close editors if needed
+	if g.editorToClose > -1 {
+		g.closeEditor(g.editorToClose)
+		g.editorToClose = -1
 	}
 
 	if g.haveErr {
@@ -448,19 +450,7 @@ func (g *Gopad) FrameEnd() {
 	g.newRunes = []rune{}
 }
 
-func (g *Gopad) ShouldRun() bool {
-	return !g.Quitting
-}
-
-func (g *Gopad) GetWindow() *engine.Window {
-	return g.Win
-}
-
-func (g *Gopad) GetImGUI() nmageimgui.ImguiInfo {
-	return g.ImGUIInfo
-}
-
-func (g *Gopad) Deinit() {
+func (g *Gopad) DeInit() {
 	g.Win.Destroy()
 }
 

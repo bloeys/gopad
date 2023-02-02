@@ -335,7 +335,7 @@ func getCharIndexFromCursor(l *Line, cursorGridX int) int {
 	return -1
 }
 
-//TODO: The offset chars must be how many grid cols between cursor col and the nearest non-tab char.
+// TODO: The offset chars must be how many grid cols between cursor col and the nearest non-tab char.
 func getTabs(l *Line, gridPosX int) (tabCount, charsToOffsetBy int) {
 
 	charIndex := getCharIndexFromCursor(l, gridPosX)
