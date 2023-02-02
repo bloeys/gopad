@@ -111,18 +111,10 @@ func (g *Gopad) Init() {
 
 	//Read os.Args
 	for i := 1; i < len(os.Args); i++ {
-		b, err := os.ReadFile(os.Args[i])
-		if err != nil {
-			errMsg := "Error opening file. Error: " + err.Error()
-			println(errMsg)
-			continue
-		}
 
-		g.editors = append(g.editors, Editor{
-			FileName:     filepath.Base(os.Args[i]),
-			FilePath:     os.Args[i],
-			FileContents: string(b),
-		})
+		e := *NewEditor(os.Args[i])
+		g.editors = append(g.editors, e)
+		g.activeEditor = len(g.editors) - 1
 	}
 
 	g.activeEditor = len(g.editors) - 1
@@ -169,12 +161,6 @@ func (g *Gopad) Update() {
 	if input.IsQuitClicked() {
 		engine.Quit()
 		return
-	}
-
-	// Close editors if needed
-	if g.editorToClose > -1 {
-		g.closeEditor(g.editorToClose)
-		g.editorToClose = -1
 	}
 
 	if g.haveErr {
@@ -448,6 +434,12 @@ func (g *Gopad) handleFileClick(fPath string) {
 
 func (g *Gopad) FrameEnd() {
 	g.newRunes = []rune{}
+
+	// Close editors if needed
+	if g.editorToClose > -1 {
+		g.closeEditor(g.editorToClose)
+		g.editorToClose = -1
+	}
 }
 
 func (g *Gopad) DeInit() {

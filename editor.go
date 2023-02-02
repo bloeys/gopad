@@ -496,6 +496,8 @@ func NewEditor(fPath string) *Editor {
 		FilePath:     fPath,
 		FileContents: string(b),
 	}
+
+	e.RefreshFontSettings()
 	e.LinesHead, e.LineCount = ParseLines(e.FileContents)
 	return e
 }
