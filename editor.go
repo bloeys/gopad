@@ -6,18 +6,21 @@ import (
 	"path/filepath"
 
 	"github.com/bloeys/gopad/settings"
-	"github.com/bloeys/nmage/input"
 	"github.com/inkyblackness/imgui-go/v4"
-	"github.com/veandco/go-sdl2/sdl"
 )
 
-// hello		there my friend
 const (
 	linesPerNode = 100
 	textPadding  = 10
 )
 
 type Line struct {
+	// @TODO: This will explode on long lines.
+	// We can use the same strategy of line nodes here, where a line is something like
+	// type Line struct {
+	// 	Line [RunesPerLine]rune
+	//  Next *Line
+	// }
 	chars []rune
 }
 
@@ -105,56 +108,70 @@ func (e *Editor) UpdateAndDraw(drawStartPos, winSize *imgui.Vec2, newRunes []run
 	imgui.PushStyleColor(imgui.StyleColorFrameBg, settings.EditorBgColor)
 	imgui.PushStyleColor(imgui.StyleColorTextSelectedBg, settings.TextSelectionColor)
 
-	//Add padding to text
-	drawStartPos.X += textPadding
-	drawStartPos.Y += textPadding
-	paddedDrawStartPos := *drawStartPos
-
-	//Make edits
-	posInfo := e.getPositions(&paddedDrawStartPos)
-	e.Insert(&posInfo, newRunes)
-
-	if input.KeyClicked(sdl.K_LEFT) {
-		e.MoveMouseXByChars(-1, &posInfo)
-	} else if input.KeyClicked(sdl.K_RIGHT) {
-		e.MoveMouseXByChars(1, &posInfo)
+	imgui.SetNextItemWidth(winSize.X)
+	if imgui.InputTextMultilineV("", &e.FileContents, imgui.Vec2{X: winSize.X - winSize.X*0.02, Y: winSize.Y - winSize.Y*0.02}, imgui.InputTextFlagsNone, nil) {
+		e.IsModified = true
 	}
 
-	if input.KeyClicked(sdl.K_UP) {
-		e.MoveMouseYByLines(-1, &posInfo)
-	} else if input.KeyClicked(sdl.K_DOWN) {
-		e.MoveMouseYByLines(1, &posInfo)
-	}
+	// @NOTE: Commented out until rewrite that doesn't use imgui as an editor is complete
+	// //Draw window
+	// imgui.SetNextWindowPos(*drawStartPos)
+	// imgui.SetNextWindowSize(*winSize)
+	// imgui.BeginV("editorText", nil, imgui.WindowFlagsNoCollapse|imgui.WindowFlagsNoDecoration|imgui.WindowFlagsNoMove)
 
-	if input.KeyClicked(sdl.K_BACKSPACE) {
-		e.Delete(&posInfo, 1)
-	}
+	// imgui.PushStyleColor(imgui.StyleColorFrameBg, settings.EditorBgColor)
+	// imgui.PushStyleColor(imgui.StyleColorTextSelectedBg, settings.TextSelectionColor)
 
-	//Draw text
-	dl := imgui.WindowDrawList()
-	linesToDraw := int(winSize.Y / e.LineHeight)
-	startLine := clampInt(int(e.StartPos), 0, e.LineCount)
-	for i := startLine; i < startLine+linesToDraw; i++ {
-		dl.AddText(*drawStartPos, imgui.PackedColorFromVec4(imgui.Vec4{X: 1, Y: 1, Z: 1, W: 1}), string(e.GetLine(0+i).chars))
-		drawStartPos.Y += e.LineHeight
-	}
+	// //Add padding to text
+	// drawStartPos.X += textPadding
+	// drawStartPos.Y += textPadding
+	// paddedDrawStartPos := *drawStartPos
 
-	tabCount, charsToOffsetBy := getTabs(posInfo.Line, posInfo.GridXEditor)
-	textWidth := float32(len(posInfo.Line.chars)-tabCount+tabCount*settings.TabSize) * e.CharWidth
-	lineX := clampF32(float32(posInfo.GridXGlobal)+float32(charsToOffsetBy)*e.CharWidth, 0, paddedDrawStartPos.X+textWidth)
+	// //Make edits
+	// posInfo := e.getPositions(&paddedDrawStartPos)
+	// e.Insert(&posInfo, newRunes)
 
-	lineStart := imgui.Vec2{
-		X: lineX,
-		Y: paddedDrawStartPos.Y + float32(posInfo.GridYEditor)*e.LineHeight - e.LineHeight*0.25,
-	}
-	lineEnd := imgui.Vec2{
-		X: lineX,
-		Y: paddedDrawStartPos.Y + float32(posInfo.GridYEditor)*e.LineHeight + e.LineHeight*0.75,
-	}
-	dl.AddLineV(lineStart, lineEnd, imgui.PackedColorFromVec4(settings.CursorColor), settings.CursorWidthFactor*e.CharWidth)
+	// if input.KeyClicked(sdl.K_LEFT) {
+	// 	e.MoveMouseXByChars(-1, &posInfo)
+	// } else if input.KeyClicked(sdl.K_RIGHT) {
+	// 	e.MoveMouseXByChars(1, &posInfo)
+	// }
 
-	// charAtCursor := getCharFromCursor(clickedLine, clickedColGridXEditor)
-	// println("Chars:", "'"+charAtCursor+"'", ";", clickedColGridXEditor)
+	// if input.KeyClicked(sdl.K_UP) {
+	// 	e.MoveMouseYByLines(-1, &posInfo)
+	// } else if input.KeyClicked(sdl.K_DOWN) {
+	// 	e.MoveMouseYByLines(1, &posInfo)
+	// }
+
+	// if input.KeyClicked(sdl.K_BACKSPACE) {
+	// 	e.Delete(&posInfo, 1)
+	// }
+
+	// //Draw text
+	// dl := imgui.WindowDrawList()
+	// linesToDraw := int(winSize.Y / e.LineHeight)
+	// startLine := clampInt(int(e.StartPos), 0, e.LineCount)
+	// for i := startLine; i < startLine+linesToDraw; i++ {
+	// 	dl.AddText(*drawStartPos, imgui.PackedColorFromVec4(imgui.Vec4{X: 1, Y: 1, Z: 1, W: 1}), string(e.GetLine(0+i).chars))
+	// 	drawStartPos.Y += e.LineHeight
+	// }
+
+	// tabCount, charsToOffsetBy := getTabs(posInfo.Line, posInfo.GridXEditor)
+	// textWidth := float32(len(posInfo.Line.chars)-tabCount+tabCount*settings.TabSize) * e.CharWidth
+	// lineX := clampF32(float32(posInfo.GridXGlobal)+float32(charsToOffsetBy)*e.CharWidth, 0, paddedDrawStartPos.X+textWidth)
+
+	// lineStart := imgui.Vec2{
+	// 	X: lineX,
+	// 	Y: paddedDrawStartPos.Y + float32(posInfo.GridYEditor)*e.LineHeight - e.LineHeight*0.25,
+	// }
+	// lineEnd := imgui.Vec2{
+	// 	X: lineX,
+	// 	Y: paddedDrawStartPos.Y + float32(posInfo.GridYEditor)*e.LineHeight + e.LineHeight*0.75,
+	// }
+	// dl.AddLineV(lineStart, lineEnd, imgui.PackedColorFromVec4(settings.CursorColor), settings.CursorWidthFactor*e.CharWidth)
+
+	// // charAtCursor := getCharFromCursor(clickedLine, clickedColGridXEditor)
+	// // println("Chars:", "'"+charAtCursor+"'", ";", clickedColGridXEditor)
 }
 
 func (e *Editor) Insert(posInfo *MousePosInfo, rs []rune) {
@@ -400,12 +417,17 @@ func (e *Editor) GetLineCharCount(lineNum int) int {
 func ParseLines(fileContents string) (*LinesNode, int) {
 
 	head := NewLineNode()
+	if len(fileContents) == 0 {
+		return head, 0
+	}
 
 	lineCount := 0
 	start := 0
 	end := 0
 	currLine := 0
 	currNode := head
+
+	// @PERF: Would be a lot faster to use something like bytes index
 	for i := 0; i < len(fileContents); i++ {
 
 		if fileContents[i] != '\n' {
